@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project outputs & uploads
+outputs/results/*
+outputs/visualizations/*
+outputs/logs/*
+!outputs/results/.gitkeep
+!outputs/visualizations/.gitkeep
+!outputs/logs/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+!backend/uploads/optical/.gitkeep
+!backend/uploads/sar/.gitkeep
+!backend/uploads/temporary/.gitkeep
+
+# Large dataset files (keep parquet/csv pointers)
+datasets/processed/fusion/
+datasets/images/S1/*
+datasets/images/S2/*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Large datasets
+datasets/*.parquet
+datasets/*.csv
+datasets/processed/*.csv
+datasets/processed/splits/*.csv
+datasets/processed/vqa_splits/*.csv
+
+# Model checkpoints and weights
+*.pth
+*.pt
+*.onnx
+
+# Training checkpoints
+datasets/processed/checkpoints/
+
+# Generated evaluation/training files
+datasets/processed/700_question_evaluation.csv
+datasets/processed/training_history.json
