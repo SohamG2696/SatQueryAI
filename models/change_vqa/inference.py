@@ -1,97 +1,149 @@
 """
 SatQuery AI — Bi-Temporal Change-VQA Inference Module.
+=======================================================
+Person B Integration: ChangeFormerV6 + Semantic Grounding.
 
-Processes two temporal satellite images + query to evaluate changes.
+Replaces the original stub BiTemporalChangeNetwork with the trained
+ChangeFormerV6 model (50 epochs, SECOND dataset, IoU=0.4678).
+
+Design
+------
+* predict() accepts raw image file paths (str | Path | PIL.Image), NOT
+  pre-processed tensors. The backend adapter (backend/app/models/change_vqa.py)
+  passes raw paths directly into predict().
+* All image resizing (to 256x256) is handled internally by ChangeAnalyzer.
+* The checkpoint is expected at:
+    models/change_vqa/weights/checkpoint_best.pth
+  See weights/DOWNLOAD_WEIGHTS.md for how to obtain it.
+* SemanticGrounder locates SECOND label maps automatically. Grounding is
+  silently disabled for images without matching label maps.
 """
 
 from __future__ import annotations
 
-import json
+import sys
+import types
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
-import torch
+from PIL import Image
 
-from .model import BiTemporalChangeNetwork
-from models.fusion.inference import encode_question
+# ── Absolute paths ─────────────────────────────────────────────────────────────
+_THIS_DIR = Path(__file__).resolve().parent          # .../models/change_vqa/
+_CHANGEFORMER_DIR = _THIS_DIR / "changeformer"       # .../models/change_vqa/changeformer/
+_DEFAULT_CHECKPOINT = _THIS_DIR / "weights" / "checkpoint_best.pth"
+
+
+def _setup_paths() -> None:
+    """
+    Ensure changeformer/ is registered as sys.modules['models'].
+
+    ChangeFormer source files use cross-imports like:
+        import models
+        from models.networks import define_G
+        from models.SiamUnet_diff import SiamUnet_diff
+    These expect top-level `models` to resolve to the changeformer/ directory.
+    SatQueryAI backend models use `app.models.*` so this does not conflict.
+    """
+    if str(_CHANGEFORMER_DIR) not in sys.path:
+        sys.path.insert(0, str(_CHANGEFORMER_DIR))
+
+    if str(_THIS_DIR) not in sys.path:
+        sys.path.insert(0, str(_THIS_DIR))
+
+    # Register changeformer/ as top-level 'models' package
+    cf_pkg = types.ModuleType("models")
+    cf_pkg.__path__ = [str(_CHANGEFORMER_DIR)]
+    cf_pkg.__package__ = "models"
+    cf_pkg.__file__ = str(_CHANGEFORMER_DIR / "__init__.py")
+    sys.modules["models"] = cf_pkg
+
+    # Also register individual submodules for direct attribute access
+    cf_modules = [
+        "networks", "help_funcs", "ChangeFormer", "ChangeFormerBaseNetworks",
+        "pixel_shuffel_up", "resnet", "SiamUnet_diff", "SiamUnet_conc",
+        "Unet", "DTCDSCN", "basic_model"
+    ]
+    for name in cf_modules:
+        full_name = f"models.{name}"
+        try:
+            mod = __import__(name)
+            sys.modules[full_name] = mod
+            setattr(cf_pkg, name, mod)
+        except Exception:
+            pass
+
+
+_setup_paths()
+
+from change_analyzer import ChangeAnalyzer  # noqa: E402 — after path setup
 
 
 class ChangeVQAInferenceEngine:
+    """
+    Thin adapter wrapping ChangeAnalyzer (ChangeFormerV6 + SemanticGrounder).
+
+    This is the class expected by backend/app/models/change_vqa.py.
+
+    Parameters
+    ----------
+    weights_path : str | Path | None
+        Path to checkpoint_best.pth. Defaults to
+        models/change_vqa/weights/checkpoint_best.pth.
+    vocab_path : str | Path | None
+        Ignored — kept for API compatibility with original stub.
+    device : any
+        Ignored — ChangeAnalyzer auto-detects XPU → CPU.
+        Kept for API compatibility.
+    """
+
     def __init__(
         self,
-        weights_path: str | Path | None = None,
-        vocab_path: str | Path | None = None,
-        device: torch.device | None = None,
+        weights_path: "str | Path | None" = None,
+        vocab_path: "str | Path | None" = None,
+        device: Any = None,
     ):
-        self.device = device or torch.device("cpu")
-        vpath = Path(vocab_path or "datasets/processed/vocabulary.json")
-        if not vpath.exists():
-            vpath = Path("models/fusion/vocabulary.json")
+        ckpt = Path(weights_path) if weights_path else _DEFAULT_CHECKPOINT
+        if not ckpt.exists():
+            ckpt = None  # ChangeAnalyzer will warn and use random weights
 
-        with open(vpath, "r", encoding="utf-8") as f:
-            vocab_data = json.load(f)
+        self._analyzer = ChangeAnalyzer(checkpoint_path=ckpt)
+        # Expose device so backend/app/models/change_vqa.py can read it
+        self.device = self._analyzer.device
 
-        self.word_to_id = vocab_data["word_to_id"]
-        self.max_length = vocab_data.get("max_length", 40)
-        self.vocab_size = vocab_data.get("vocab_size", len(self.word_to_id))
-
-        self.model = BiTemporalChangeNetwork(vocab_size=self.vocab_size).to(self.device)
-
-        if weights_path and Path(weights_path).exists():
-            try:
-                ckpt = torch.load(weights_path, map_location=self.device, weights_only=False)
-                if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-                    self.model.load_state_dict(ckpt["model_state_dict"], strict=False)
-                elif isinstance(ckpt, dict):
-                    self.model.load_state_dict(ckpt, strict=False)
-            except Exception:
-                pass
-
-        self.model.eval()
-
-    @torch.no_grad()
     def predict(
         self,
-        t1_tensor: torch.Tensor,
-        t2_tensor: torch.Tensor,
+        image_t1: "Union[str, Path, Image.Image]",
+        image_t2: "Union[str, Path, Image.Image]",
         query: str,
-        dates: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Run bi-temporal change prediction."""
-        t1_tensor = t1_tensor.to(self.device)
-        t2_tensor = t2_tensor.to(self.device)
-        q_tensor = encode_question(
-            query,
-            self.word_to_id,
-            self.max_length,
-            device=self.device,
-        )
+        dates: "list[str] | None" = None,
+    ) -> "dict[str, Any]":
+        """
+        Run ChangeFormerV6 change detection + category-aware semantic grounding.
 
-        logits = self.model(t1_tensor, t2_tensor, q_tensor)
-        probs = torch.softmax(logits, dim=1)[0]
-        pred_idx = probs.argmax().item()
-        conf = probs[pred_idx].item()
+        Parameters
+        ----------
+        image_t1 : str | Path | PIL.Image
+            T1 (before) image — raw path or PIL Image.
+            Do NOT pass a pre-processed tensor.
+        image_t2 : str | Path | PIL.Image
+            T2 (after) image.
+        query : str
+            Natural-language CDVQA question.
+        dates : list[str] | None
+            Optional acquisition dates (stored in response for traceability).
 
-        answer = "YES" if pred_idx == 1 else "NO"
-
-        # Generate descriptive context if dates are provided
-        date_str = ""
-        if dates and len(dates) >= 2:
-            date_str = f" between {dates[0]} and {dates[1]}"
-
-        return {
-            "answer": answer,
-            "confidence": round(max(0.65, min(0.96, conf)), 4),
-            "visual_evidence": {
-                "type": "none",
-            },
-            "parameters": {
-                "query": query,
-                "dates": dates,
-                "comparison": f"Evaluated bi-temporal change{date_str}.",
-                "probabilities": {
-                    "NO": round(probs[0].item(), 4),
-                    "YES": round(probs[1].item(), 4),
-                },
-            },
-        }
+        Returns
+        -------
+        dict — Full Person B response schema:
+            answer, raw_answer, confidence,
+            change_ratio, global_change_ratio,
+            category, category_change_ratio,
+            has_grounding, change_mask_base64,
+            task, model, question_type, question,
+            metrics, category_metrics, all_category_metrics,
+            parameters
+        """
+        result = self._analyzer.analyze_change(image_t1, image_t2, query)
+        result["parameters"] = {"query": query, "dates": dates}
+        return result
