@@ -94,6 +94,17 @@ def run_module(
     # ChangeAnalyzer handles image loading and resizing to 256x256 internally.
     result = engine.predict(images[0], images[1], query, dates=dates)
 
+    # Merge Person B grounding metadata into parameters dict for execution summary
+    params = result.get("parameters", {}) or {}
+    params.update({
+        "category": result.get("category"),
+        "category_change_ratio": result.get("category_change_ratio"),
+        "global_change_ratio": result.get("global_change_ratio"),
+        "question_type": result.get("question_type"),
+        "has_grounding": result.get("has_grounding", False),
+        "raw_answer": result.get("raw_answer"),
+    })
+
     return {
         "answer": result["answer"],
         "raw_answer": result.get("raw_answer"),
@@ -112,7 +123,9 @@ def run_module(
         "all_category_metrics": result.get("all_category_metrics"),
         "visual_evidence": {
             "type": "change_mask" if result.get("change_mask_base64") else "none",
-            "mask_base64": result.get("change_mask_base64"),
+            "data": {
+                "mask_base64": result.get("change_mask_base64")
+            }
         },
-        "parameters": result.get("parameters", {}),
+        "parameters": params,
     }

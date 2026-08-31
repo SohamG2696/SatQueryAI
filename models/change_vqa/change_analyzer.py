@@ -330,6 +330,8 @@ class ChangeAnalyzer:
         l1_path, l2_path = None, None
         if isinstance(image_t1, (str, Path)):
             l1_path, l2_path = self.grounder.find_label_paths(image_t1)
+        elif isinstance(image_t1, Image.Image) and getattr(image_t1, "filename", None):
+            l1_path, l2_path = self.grounder.find_label_paths(image_t1.filename)
 
         has_grounding = False
         cat_stats = {}

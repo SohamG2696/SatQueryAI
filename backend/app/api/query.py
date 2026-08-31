@@ -10,9 +10,11 @@ and optional metadata. Returns evidence-grounded QueryResponse.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any, List, Optional
+from PIL import Image
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -56,7 +58,14 @@ async def execute_query(
         for f in images:
             content = await f.read()
             if len(content) > 0:
-                image_sources.append(content)
+                try:
+                    pil_img = Image.open(io.BytesIO(content))
+                    image_sources.append(pil_img)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to decode uploaded image file '{f.filename}': {str(exc)}",
+                    )
 
     # Priority B: Referenced Image IDs from previous uploads
     if image_ids and image_ids.strip():
