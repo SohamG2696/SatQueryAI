@@ -44,8 +44,41 @@ def test_fusion_adapter_mcq():
     )
 
     assert "answer" in result
-    assert result["answer"] in ("A", "B", "C", "D")
+    assert result["answer"].startswith(("A", "B", "C", "D"))
     assert result["confidence"] is not None
+    assert result["parameters"]["task_sub_type"] == "mcq"
+
+
+def test_fusion_natural_language_mcq():
+    """Verify natural language MCQ query detection without task_hint."""
+    opt_img = np.random.rand(4, 224, 224).astype(np.float32)
+    sar_img = np.random.rand(2, 224, 224).astype(np.float32)
+
+    result = run_fusion(
+        images=[opt_img, sar_img],
+        query="Which category best describes the image: agriculture, forest, water, or urban?",
+        metadata={"modalities": ["optical", "sar"]},
+    )
+
+    assert "answer" in result
+    assert result["parameters"]["task_sub_type"] == "mcq"
+    assert result["answer"].startswith(("A", "B", "C", "D"))
+    assert result["confidence"] is not None
+
+
+def test_fusion_binary_query_detection():
+    """Verify binary YES/NO task detection."""
+    opt_img = np.random.rand(4, 224, 224).astype(np.float32)
+    sar_img = np.random.rand(2, 224, 224).astype(np.float32)
+
+    result = run_fusion(
+        images=[opt_img, sar_img],
+        query="Does the target area contain buildings?",
+        metadata={"modalities": ["optical", "sar"]},
+    )
+
+    assert result["parameters"]["task_sub_type"] == "binary"
+    assert result["answer"] in ("YES", "NO")
 
 
 def test_fusion_adapter_bbox():
@@ -70,3 +103,53 @@ def test_fusion_adapter_insufficient_images():
     """Verify ValueError on single image input."""
     with pytest.raises(ValueError):
         run_fusion(images=[np.zeros((4, 224, 224))], query="Test")
+
+
+def test_fusion_api_endpoint_bbox_evidence():
+    """Verify POST /api/fusion returns visual_evidence and evidence list for BBox queries."""
+    import io
+    from PIL import Image
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+
+    # Upload optical image
+    opt_buf = io.BytesIO()
+    Image.new("RGB", (100, 100), color=(100, 150, 200)).save(opt_buf, format="PNG")
+    opt_buf.seek(0)
+    opt_res = client.post("/api/upload", files={"file": ("opt.png", opt_buf, "image/png")}, data={"modality": "optical"})
+    assert opt_res.status_code == 200
+    opt_id = opt_res.json()["image_id"]
+
+    # Upload SAR image
+    sar_buf = io.BytesIO()
+    Image.new("RGB", (100, 100), color=(50, 50, 50)).save(sar_buf, format="PNG")
+    sar_buf.seek(0)
+    sar_res = client.post("/api/upload", files={"file": ("sar.png", sar_buf, "image/png")}, data={"modality": "sar"})
+    assert sar_res.status_code == 200
+    sar_id = sar_res.json()["image_id"]
+
+    # Call POST /api/fusion
+    res = client.post(
+        "/api/fusion",
+        json={
+            "optical_image_id": opt_id,
+            "sar_image_id": sar_id,
+            "query": "Locate the target built-up region in both modalities.",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["success"] is True
+    assert data["task"] == "fusion"
+    assert "visual_evidence" in data
+    assert data["visual_evidence"] is not None
+    assert data["visual_evidence"]["type"] == "bbox"
+    coords = data["visual_evidence"]["coordinates"]
+    assert len(coords) == 4
+    for c in coords:
+        assert 0.0 <= c <= 1.0
+    assert len(data["evidence"]) > 0
+    assert data["evidence"][0].startswith("bbox:")

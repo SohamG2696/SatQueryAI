@@ -57,6 +57,15 @@ async def optical_sar_fusion(req: FusionRequest) -> AnalysisResponse:
         metadata={"modalities": ["optical", "sar"]},
     )
 
+    visual_ev = result.get("visual_evidence")
+    evidence_list = []
+    if visual_ev:
+        if isinstance(visual_ev, dict) and visual_ev.get("type") == "bbox":
+            coords = visual_ev.get("coordinates", [])
+            evidence_list.append(f"bbox:{coords}")
+        else:
+            evidence_list.append(str(visual_ev))
+
     return AnalysisResponse(
         success=True,
         task="fusion",
@@ -64,7 +73,8 @@ async def optical_sar_fusion(req: FusionRequest) -> AnalysisResponse:
         confidence=result.get("confidence"),
         models_used=[result.get("model_name", "satquery-optical-sar-fusion-v1")],
         parameters=result.get("parameters", {}),
-        evidence=[],
+        visual_evidence=visual_ev,
+        evidence=evidence_list,
         execution_trace=[
             "Optical and SAR inputs validated",
             "Cross-modal fusion encoder executed",

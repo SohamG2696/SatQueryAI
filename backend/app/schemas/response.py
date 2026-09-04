@@ -54,6 +54,7 @@ class AnalysisResponse(BaseModel):
     confidence: Optional[float] = None
     models_used: List[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    visual_evidence: Optional[VisualEvidence] = None
     evidence: List[str] = Field(default_factory=list)
     execution_trace: List[str] = Field(default_factory=list)
     processing_time: float = 0.0

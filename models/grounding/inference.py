@@ -14,32 +14,47 @@ from typing import Any
 import torch
 
 from .model import SpatialGroundingNetwork
-from models.fusion.inference import encode_question, tokenize
+from models.fusion.inference import tokenize
 
-# Clean domain synonym normalization before encoding question
-GROUNDING_SYNONYMS = {
-    "roads": "urban",
-    "road": "urban",
-    "buildings": "industrial",
-    "building": "industrial",
-    "tanks": "water",
-    "tank": "water",
-    "vehicles": "urban",
-    "vehicle": "urban",
-    "cars": "urban",
-    "car": "urban",
-    "trees": "forest",
-    "tree": "forest",
-    "fields": "agriculture",
-    "field": "agriculture",
+# Safe linguistic normalization dictionary preserving target object semantics
+# Note: Target objects like 'roads', 'buildings', 'trees', 'vehicles' must NOT be mapped to land-cover classes like 'urban' or 'industrial'.
+GROUNDING_SYNONYMS: dict[str, str] = {
+    # Safe identity or spelling variants
+    "road": "roads",
+    "building": "buildings",
+    "tree": "trees",
+    "vehicle": "vehicles",
+    "car": "cars",
+    "field": "fields",
 }
 
 
 def normalize_query(query: str) -> str:
-    """Normalize query text mapping domain synonyms to trained vocabulary tokens."""
+    """Normalize query text performing lowercase, whitespace cleanup, and punctuation removal without altering target object semantics."""
     tokens = tokenize(query)
     norm_tokens = [GROUNDING_SYNONYMS.get(t, t) for t in tokens]
     return " ".join(norm_tokens)
+
+
+def encode_question(
+    text: str,
+    word_to_id: dict[str, int],
+    max_length: int = 40,
+    device: torch.device | None = None,
+) -> torch.Tensor:
+    """Encode question into token IDs tensor [1, max_length] using Grounding query normalization."""
+    norm_text = normalize_query(text)
+    tokens = tokenize(norm_text)
+    pad_id = word_to_id.get("<PAD>", 0)
+    unk_id = word_to_id.get("<UNK>", 1)
+
+    ids = [word_to_id.get(tok, unk_id) for tok in tokens[:max_length]]
+    ids += [pad_id] * (max_length - len(ids))
+
+    tensor = torch.tensor([ids], dtype=torch.long)
+    if device is not None:
+        tensor = tensor.to(device)
+    return tensor
 
 
 class GroundingInferenceEngine:

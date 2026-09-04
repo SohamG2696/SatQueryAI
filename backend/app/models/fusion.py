@@ -87,21 +87,71 @@ def run_module(
             "parameters": dict
         }
     """
+def _assign_optical_sar(images: list[Any], metadata: dict[str, Any] | None) -> tuple[Any, Any]:
+    """Determine optical_src and sar_src from image list and metadata or path inspection."""
+    meta = metadata or {}
+    modalities = meta.get("modalities")
+
+    if modalities and len(modalities) >= 2:
+        m0, m1 = str(modalities[0]).lower(), str(modalities[1]).lower()
+        if m0 in ("sar", "s1") and m1 in ("optical", "s2"):
+            return images[1], images[0]  # optical_src, sar_src
+        elif m0 in ("optical", "s2") and m1 in ("sar", "s1"):
+            return images[0], images[1]  # optical_src, sar_src
+
+    # Auto-detect from filename / path string representation
+    def _is_sar(src: Any) -> bool:
+        s = str(src).lower()
+        return any(k in s for k in ("sar", "_vv", "_vh", "s1a", "s1b"))
+
+    def _is_optical(src: Any) -> bool:
+        s = str(src).lower()
+        return any(k in s for k in ("optical", "s2a", "s2b", "_b02", "_b04", "rgb"))
+
+    if _is_sar(images[0]) and not _is_sar(images[1]):
+        return images[1], images[0]
+    elif _is_optical(images[1]) and not _is_optical(images[0]):
+        return images[1], images[0]
+
+    # Default fallback: images[0] is optical, images[1] is sar
+    return images[0], images[1]
+
+
+def run_module(
+    images: list[Any],
+    query: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Execute Optical-SAR cross-modal fusion analysis.
+
+    Parameters
+    ----------
+    images : list
+        Expected two images: [optical_image, sar_image].
+    query : str
+        Natural-language question or instruction.
+    metadata : dict | None
+        Optional metadata including modality labels, image IDs, etc.
+
+    Returns
+    -------
+    dict
+        Standard contract response:
+        {
+            "answer": str,
+            "confidence": float,
+            "visual_evidence": dict | None,
+            "model_name": str,
+            "parameters": dict
+        }
+    """
     if len(images) < 2:
         raise ValueError("Optical-SAR Fusion requires two co-registered images (Optical and SAR).")
 
     engine = get_fusion_engine()
-
     meta = metadata or {}
-    modalities = meta.get("modalities", ["optical", "sar"])
 
-    # Determine optical and SAR assignment
-    if len(modalities) >= 2 and modalities[0] == "sar" and modalities[1] == "optical":
-        sar_src = images[0]
-        optical_src = images[1]
-    else:
-        optical_src = images[0]
-        sar_src = images[1]
+    optical_src, sar_src = _assign_optical_sar(images, meta)
 
     optical_tensor = prepare_optical_tensor(optical_src, target_size=(224, 224), device=engine.device)
     sar_tensor = prepare_sar_tensor(sar_src, target_size=(224, 224), device=engine.device)

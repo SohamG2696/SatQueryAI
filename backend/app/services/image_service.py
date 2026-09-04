@@ -192,30 +192,98 @@ def load_image_array(
     raise ValueError(f"Unsupported image source type: {type(source)}")
 
 
+def _normalize_channel_2d(arr: np.ndarray) -> np.ndarray:
+    """Apply 2%-98% percentile min-max normalization matching Fusion training pipeline."""
+    data = arr.astype(np.float32)
+
+    if np.isnan(data).any() or np.isinf(data).any():
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+
+    low = float(np.percentile(data, 2))
+    high = float(np.percentile(data, 98))
+
+    if high <= low:
+        high = float(data.max())
+        low = float(data.min())
+        if high <= low:
+            return np.zeros_like(data, dtype=np.float32)
+
+    data = np.clip(data, low, high)
+    data = (data - low) / (high - low)
+    return data.astype(np.float32)
+
+
 def prepare_optical_tensor(
     source: str | Path | bytes | io.BytesIO | np.ndarray | Image.Image,
     target_size: Tuple[int, int] = (224, 224),
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Load and format an optical image into [1, 4, H, W] normalized float tensor [0, 1]."""
-    arr, _ = load_image_array(source)
+    """Load and format Optical satellite data into [1, 4, H, W] float32 tensor matching Fusion training.
 
-    if arr.max() > 1.0:
-        arr = arr / 255.0
+    Channel Order: [B02 (Blue), B03 (Green), B04 (Red), B08 (NIR)]
+    Normalization: 2%-98% Percentile Min-Max Scaling [0.0, 1.0]
+    """
+    if source is None:
+        raise ValueError("Optical image source cannot be None.")
+
+    arr, meta = load_image_array(source)
+
+    if arr is None or arr.size == 0:
+        raise ValueError("Optical image array is empty or corrupt.")
+
+    if np.isnan(arr).any() or np.isinf(arr).any():
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Handle NPZ fusion pair directly if s2 array exists
+    if meta.get("format") == "npz_fusion_pair" and "s2" in meta:
+        s2_arr = meta["s2"]
+        if s2_arr.dtype == np.uint8 or s2_arr.max() > 1.0:
+            stacked = (s2_arr.astype(np.float32) / 255.0)
+        else:
+            stacked = s2_arr.astype(np.float32)
+        tensor = torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
+        if tensor.shape[2:] != target_size:
+            tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)
+        tensor = torch.clamp(tensor, 0.0, 1.0)
+        if device is not None:
+            tensor = tensor.to(device)
+        return tensor
 
     channels, h, w = arr.shape
 
-    if channels == 1:
-        arr = np.repeat(arr, 4, axis=0)
-    elif channels == 2:
-        arr = np.concatenate([arr, arr], axis=0)
-    elif channels == 3:
-        nir = (arr[0:1] * 0.5 + arr[1:2] * 0.5)
-        arr = np.concatenate([arr, nir], axis=0)
-    elif channels >= 4:
-        arr = arr[:4]
+    # Apply 2%-98% percentile normalization to each band
+    norm_channels = [_normalize_channel_2d(arr[i]) for i in range(channels)]
 
-    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)
+    if channels >= 4:
+        if meta.get("format") in ("pil_image", "png", "jpg", "jpeg"):
+            # Standard PIL Image RGBA: ch0=Red, ch1=Green, ch2=Blue, ch3=Alpha/NIR
+            b02 = norm_channels[2]  # Blue
+            b03 = norm_channels[1]  # Green
+            b04 = norm_channels[0]  # Red
+            if np.allclose(norm_channels[3], norm_channels[3][0, 0]):
+                b08 = (b04 * 0.5 + b03 * 0.5)
+            else:
+                b08 = norm_channels[3]  # NIR
+            stacked = np.stack([b02, b03, b04, b08])
+        else:
+            # Multi-band GeoTIFF or S2 stack [B02, B03, B04, B08]
+            stacked = np.stack([norm_channels[0], norm_channels[1], norm_channels[2], norm_channels[3]])
+    elif channels == 3:
+        # Standard RGB image [Red, Green, Blue] -> Map to [B02 (Blue), B03 (Green), B04 (Red), B08 (NIR)]
+        b04 = norm_channels[0]  # Red
+        b03 = norm_channels[1]  # Green
+        b02 = norm_channels[2]  # Blue
+        b08 = (b04 * 0.5 + b03 * 0.5)  # Synthetic NIR
+        stacked = np.stack([b02, b03, b04, b08])
+    elif channels == 2:
+        stacked = np.stack([norm_channels[0], norm_channels[1], norm_channels[0], norm_channels[1]])
+    elif channels == 1:
+        ch = norm_channels[0]
+        stacked = np.stack([ch, ch, ch, ch])
+    else:
+        raise ValueError(f"Invalid channel count for Optical image: {channels}")
+
+    tensor = torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
 
     if (h, w) != target_size:
         tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)
@@ -232,20 +300,53 @@ def prepare_sar_tensor(
     target_size: Tuple[int, int] = (224, 224),
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Load and format a SAR image into [1, 2, H, W] normalized float tensor [0, 1]."""
-    arr, _ = load_image_array(source)
+    """Load and format SAR satellite data into [1, 2, H, W] float32 tensor matching Fusion training.
 
-    if arr.max() > 1.0:
-        arr = arr / 255.0
+    Channel Order: [VV, VH]
+    Normalization: 2%-98% Percentile Min-Max Scaling [0.0, 1.0]
+    """
+    if source is None:
+        raise ValueError("SAR image source cannot be None.")
+
+    arr, meta = load_image_array(source)
+
+    if arr is None or arr.size == 0:
+        raise ValueError("SAR image array is empty or corrupt.")
+
+    if np.isnan(arr).any() or np.isinf(arr).any():
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Handle NPZ fusion pair directly if s1 array exists
+    if meta.get("format") == "npz_fusion_pair" and "s1" in meta:
+        s1_arr = meta["s1"]
+        if s1_arr.dtype == np.uint8 or s1_arr.max() > 1.0:
+            stacked = (s1_arr.astype(np.float32) / 255.0)
+        else:
+            stacked = s1_arr.astype(np.float32)
+        tensor = torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
+        if tensor.shape[2:] != target_size:
+            tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)
+        tensor = torch.clamp(tensor, 0.0, 1.0)
+        if device is not None:
+            tensor = tensor.to(device)
+        return tensor
 
     channels, h, w = arr.shape
 
-    if channels == 1:
-        arr = np.concatenate([arr, arr], axis=0)
-    elif channels >= 2:
-        arr = np.concatenate([arr[:2]], axis=0)
+    # Apply 2%-98% percentile normalization to each band
+    norm_channels = [_normalize_channel_2d(arr[i]) for i in range(channels)]
 
-    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)
+    if channels >= 2:
+        # Expected [VV, VH]
+        stacked = np.stack([norm_channels[0], norm_channels[1]])
+    elif channels == 1:
+        # Single SAR polarization band (e.g. VV) -> duplicate across both bands
+        ch = norm_channels[0]
+        stacked = np.stack([ch, ch])
+    else:
+        raise ValueError(f"Invalid channel count for SAR image: {channels}")
+
+    tensor = torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
 
     if (h, w) != target_size:
         tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)

@@ -41,10 +41,10 @@ class Settings(BaseSettings):
     allowed_image_extensions: str = ".tif,.tiff,.png,.jpg,.jpeg"
 
     # ── Model Paths ──────────────────────────────────────────────
-    vqa_model_path: str = "models/vlm/weights/model"
-    caption_model_path: str = "models/vlm/weights/model"
-    grounding_model_path: str = "models/grounding/weights/model"
-    change_vqa_model_path: str = "models/change_vqa/weights/model"
+    vqa_model_path: str = "models/vlm/weights"
+    caption_model_path: str = "models/vlm/weights"
+    grounding_model_path: str = "models/grounding/weights/spatial_grounding_model.pth"
+    change_vqa_model_path: str = "models/change_vqa/weights/checkpoint_best.pth"
     fusion_model_path: str = "models/fusion/weights/multitask_fusion_model_final.pth"
 
     # ── Confidence & Evaluation ──────────────────────────────────
