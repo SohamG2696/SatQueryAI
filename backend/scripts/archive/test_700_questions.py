@@ -4,6 +4,9 @@ import re
 import time
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import numpy as np
 import pandas as pd
 import torch
@@ -12,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fusion_model import MultiTaskFusionModel
+from backend.scripts.fusion_model import MultiTaskFusionModel
 
 
 BASE = Path("datasets/processed")

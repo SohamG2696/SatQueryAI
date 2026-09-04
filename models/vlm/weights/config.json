@@ -1,0 +1,236 @@
+{
+  "architectures": [
+    "LlavaOnevisionForConditionalGeneration"
+  ],
+  "dtype": "float32",
+  "ignore_index": -100,
+  "image_grid_pinpoints": [
+    [
+      384,
+      384
+    ],
+    [
+      384,
+      768
+    ],
+    [
+      384,
+      1152
+    ],
+    [
+      384,
+      1536
+    ],
+    [
+      384,
+      1920
+    ],
+    [
+      384,
+      2304
+    ],
+    [
+      768,
+      384
+    ],
+    [
+      768,
+      768
+    ],
+    [
+      768,
+      1152
+    ],
+    [
+      768,
+      1536
+    ],
+    [
+      768,
+      1920
+    ],
+    [
+      768,
+      2304
+    ],
+    [
+      1152,
+      384
+    ],
+    [
+      1152,
+      768
+    ],
+    [
+      1152,
+      1152
+    ],
+    [
+      1152,
+      1536
+    ],
+    [
+      1152,
+      1920
+    ],
+    [
+      1152,
+      2304
+    ],
+    [
+      1536,
+      384
+    ],
+    [
+      1536,
+      768
+    ],
+    [
+      1536,
+      1152
+    ],
+    [
+      1536,
+      1536
+    ],
+    [
+      1536,
+      1920
+    ],
+    [
+      1536,
+      2304
+    ],
+    [
+      1920,
+      384
+    ],
+    [
+      1920,
+      768
+    ],
+    [
+      1920,
+      1152
+    ],
+    [
+      1920,
+      1536
+    ],
+    [
+      1920,
+      1920
+    ],
+    [
+      1920,
+      2304
+    ],
+    [
+      2304,
+      384
+    ],
+    [
+      2304,
+      768
+    ],
+    [
+      2304,
+      1152
+    ],
+    [
+      2304,
+      1536
+    ],
+    [
+      2304,
+      1920
+    ],
+    [
+      2304,
+      2304
+    ]
+  ],
+  "image_token_index": 151646,
+  "model_type": "llava_onevision",
+  "multimodal_projector_bias": true,
+  "projector_hidden_act": "gelu",
+  "text_config": {
+    "_name_or_path": "Qwen/Qwen2-0.5B-Instruct",
+    "architectures": [
+      "Qwen2ForCausalLM"
+    ],
+    "attention_dropout": 0.0,
+    "bos_token_id": 151643,
+    "dtype": "float32",
+    "eos_token_id": 151645,
+    "hidden_act": "silu",
+    "hidden_size": 896,
+    "initializer_range": 0.02,
+    "intermediate_size": 4864,
+    "layer_types": [
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention"
+    ],
+    "max_position_embeddings": 32768,
+    "max_window_layers": 24,
+    "model_type": "qwen2",
+    "num_attention_heads": 14,
+    "num_hidden_layers": 24,
+    "num_key_value_heads": 2,
+    "pad_token_id": null,
+    "rms_norm_eps": 1e-06,
+    "rope_parameters": {
+      "rope_theta": 1000000.0,
+      "rope_type": "default"
+    },
+    "sliding_window": null,
+    "tie_word_embeddings": true,
+    "use_cache": true,
+    "use_sliding_window": false,
+    "vocab_size": 152000
+  },
+  "tie_word_embeddings": true,
+  "transformers_version": "5.14.1",
+  "use_image_newline_parameter": true,
+  "video_token_index": 151647,
+  "vision_aspect_ratio": "anyres_max_9",
+  "vision_config": {
+    "attention_dropout": 0.0,
+    "dtype": "float32",
+    "hidden_act": "gelu_pytorch_tanh",
+    "hidden_size": 1152,
+    "image_size": 384,
+    "intermediate_size": 4304,
+    "layer_norm_eps": 1e-06,
+    "model_type": "siglip_vision_model",
+    "num_attention_heads": 16,
+    "num_channels": 3,
+    "num_hidden_layers": 26,
+    "patch_size": 14,
+    "vision_use_head": false
+  },
+  "vision_feature_layer": -1,
+  "vision_feature_select_strategy": "full"
+}

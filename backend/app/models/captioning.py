@@ -1,13 +1,14 @@
 """
-SatQuery AI — Image Captioning Model Adapter (Placeholder).
+SatQuery AI — Image Captioning Model Adapter.
 
-Implements the standard model contract for satellite scene description.
-Currently returns controlled unavailable status until the general VLM module is ready.
+Connects single-image scene description / captioning queries to Person A's LLaVA-OneVision VLM adapter.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from app.models.vqa import _to_pil_image
+from models.vlm.vlm_adapter import get_vlm_adapter
 
 
 def run_module(
@@ -15,38 +16,28 @@ def run_module(
     query: str = "",
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute single-image Scene Description / Captioning.
-
-    Parameters
-    ----------
-    images : list
-        Single satellite image.
-    query : str
-        Optional description instruction.
-    metadata : dict | None
-        Optional metadata.
-
-    Returns
-    -------
-    dict
-        Controlled placeholder response compliant with the standard model contract.
-    """
+    """Execute single-image Scene Description / Captioning using Person A's VLM model."""
     if not images:
         raise ValueError("Image Captioning requires at least one satellite image.")
 
+    q = query.strip() if query and query.strip() else "Describe this satellite image in detail."
+
+    pil_img = _to_pil_image(images[0])
+    adapter = get_vlm_adapter()
+    res = adapter.predict(image=pil_img, question=q)
+
     return {
-        "answer": (
-            "[VLM_PENDING] Remote-sensing Vision-Language Captioning Model "
-            "is scheduled for integration in the next milestone. "
-            "The image was successfully received and validated."
-        ),
-        "confidence": None,
+        "answer": res["prediction"],
+        "confidence": 0.90,
         "visual_evidence": {
             "type": "none",
         },
-        "model_name": "satquery-vlm-caption-placeholder",
+        "model_name": "satquery-vlm-person-a",
         "parameters": {
-            "query": query,
-            "status": "not_ready",
+            "query": res["question"],
+            "raw_prediction": res["raw_prediction"],
+            "inference_time_s": res["inference_time_s"],
+            "model": res["model"],
+            "status": "ready",
         },
     }

@@ -7,13 +7,13 @@ from torch.optim import lr_scheduler
 import functools
 from einops import rearrange
 
-import models
-from models.help_funcs import Transformer, TransformerDecoder, TwoLayerConv2d
-from models.ChangeFormer import ChangeFormerV1, ChangeFormerV2, ChangeFormerV3, ChangeFormerV4, ChangeFormerV5, ChangeFormerV6
-from models.SiamUnet_diff import SiamUnet_diff
-from models.SiamUnet_conc import SiamUnet_conc
-from models.Unet import Unet
-from models.DTCDSCN import CDNet34
+from . import resnet as resnet_models
+from .help_funcs import Transformer, TransformerDecoder, TwoLayerConv2d
+from .ChangeFormer import ChangeFormerV1, ChangeFormerV2, ChangeFormerV3, ChangeFormerV4, ChangeFormerV5, ChangeFormerV6
+from .SiamUnet_diff import SiamUnet_diff
+from .SiamUnet_conc import SiamUnet_conc
+from .Unet import Unet
+from .DTCDSCN import CDNet34
 
 ###############################################################################
 # Helper Functions
@@ -200,13 +200,13 @@ class ResNet(torch.nn.Module):
         super(ResNet, self).__init__()
         expand = 1
         if backbone == 'resnet18':
-            self.resnet = models.resnet18(pretrained=True,
+            self.resnet = resnet_models.resnet18(pretrained=True,
                                           replace_stride_with_dilation=[False,True,True])
         elif backbone == 'resnet34':
-            self.resnet = models.resnet34(pretrained=True,
+            self.resnet = resnet_models.resnet34(pretrained=True,
                                           replace_stride_with_dilation=[False,True,True])
         elif backbone == 'resnet50':
-            self.resnet = models.resnet50(pretrained=True,
+            self.resnet = resnet_models.resnet50(pretrained=True,
                                           replace_stride_with_dilation=[False,True,True])
             expand = 4
         else:

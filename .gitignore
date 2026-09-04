@@ -63,9 +63,21 @@ datasets/processed/vqa_splits/*.csv
 *.pt
 *.onnx
 
+# Large model weights
+*.safetensors
+
 # Training checkpoints
 datasets/processed/checkpoints/
 
 # Generated evaluation/training files
 datasets/processed/700_question_evaluation.csv
 datasets/processed/training_history.json
+
+# Runtime uploaded images
+uploads/*
+!uploads/.gitkeep
+!uploads/optical/.gitkeep
+!uploads/sar/.gitkeep
+
+# Git LFS / large checkpoint directories
+models/change_vqa/weights/checkpoint_best/

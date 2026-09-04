@@ -1,5 +1,5 @@
 """
-Tests for VQA and Captioning Placeholder Adapters.
+Tests for Person A VLM VQA and Captioning Adapters.
 """
 
 import pytest
@@ -13,23 +13,25 @@ from app.models.vqa import run_module as run_vqa
 from app.models.captioning import run_module as run_captioning
 
 
-def test_vqa_placeholder():
-    """Verify VQA placeholder returns controlled non-crashing status."""
-    img = np.random.rand(3, 224, 224).astype(np.float32)
-    result = run_vqa(images=[img], query="Is there agriculture in this image?")
+def test_vqa_adapter():
+    """Verify VQA module returns Person A VLM prediction."""
+    img = np.random.rand(224, 224, 3).astype(np.uint8)
+    result = run_vqa(images=[img], query="Are buildings visible in this satellite image?")
 
     assert "answer" in result
-    assert "[VLM_PENDING]" in result["answer"]
-    assert result["confidence"] is None
-    assert result["parameters"]["status"] == "not_ready"
+    assert isinstance(result["answer"], str)
+    assert len(result["answer"]) > 0
+    assert result["model_name"] == "satquery-vlm-person-a"
+    assert result["parameters"]["status"] == "ready"
 
 
-def test_captioning_placeholder():
-    """Verify Captioning placeholder returns controlled non-crashing status."""
-    img = np.random.rand(3, 224, 224).astype(np.float32)
+def test_captioning_adapter():
+    """Verify Captioning module returns Person A VLM prediction."""
+    img = np.random.rand(224, 224, 3).astype(np.uint8)
     result = run_captioning(images=[img], query="Describe this satellite scene.")
 
     assert "answer" in result
-    assert "[VLM_PENDING]" in result["answer"]
-    assert result["confidence"] is None
-    assert result["parameters"]["status"] == "not_ready"
+    assert isinstance(result["answer"], str)
+    assert len(result["answer"]) > 0
+    assert result["model_name"] == "satquery-vlm-person-a"
+    assert result["parameters"]["status"] == "ready"

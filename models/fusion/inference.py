@@ -16,10 +16,35 @@ import torch
 
 from .model import MultiTaskFusionModel
 
+# Domain synonym normalization mapping for query tokenization
+FUSION_SYNONYMS = {
+    "roads": "urban",
+    "road": "urban",
+    "buildings": "industrial",
+    "building": "industrial",
+    "tanks": "water",
+    "tank": "water",
+    "vehicles": "urban",
+    "vehicle": "urban",
+    "cars": "urban",
+    "car": "urban",
+    "trees": "forest",
+    "tree": "forest",
+    "fields": "agriculture",
+    "field": "agriculture",
+}
+
 
 def tokenize(text: str) -> list[str]:
     """Tokenize query string into lower-case word tokens."""
     return re.findall(r"\b\w+\b", str(text).lower())
+
+
+def normalize_query(query: str) -> str:
+    """Normalize query text mapping domain synonyms to trained vocabulary tokens."""
+    tokens = tokenize(query)
+    norm_tokens = [FUSION_SYNONYMS.get(t, t) for t in tokens]
+    return " ".join(norm_tokens)
 
 
 def encode_question(
@@ -29,7 +54,8 @@ def encode_question(
     device: torch.device | None = None,
 ) -> torch.Tensor:
     """Encode question into token IDs tensor [1, max_length]."""
-    tokens = tokenize(text)
+    norm_text = normalize_query(text)
+    tokens = tokenize(norm_text)
     pad_id = word_to_id.get("<PAD>", 0)
     unk_id = word_to_id.get("<UNK>", 1)
 
@@ -68,15 +94,16 @@ class FusionInferenceEngine:
         self.model = MultiTaskFusionModel(vocab_size=self.vocab_size).to(self.device)
 
         if not self.weights_path.exists():
-            raise FileNotFoundError(f"Model weights not found: {self.weights_path}")
+            raise FileNotFoundError(f"Model weights file not found: {self.weights_path}")
 
+        print(f"[FUSION] Loading checkpoint: {self.weights_path}")
         checkpoint = torch.load(self.weights_path, map_location=self.device, weights_only=False)
-        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-        elif isinstance(checkpoint, dict):
-            self.model.load_state_dict(checkpoint)
-        else:
-            raise ValueError(f"Invalid checkpoint format in {self.weights_path}")
+
+        state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+
+        missing, unexpected = self.model.load_state_dict(state_dict, strict=True)
+        print(f"[FUSION] Missing keys: {missing}, Unexpected keys: {unexpected}")
+        print("[FUSION] Checkpoint loaded successfully with strict=True!")
 
         self.model.eval()
 
@@ -91,6 +118,8 @@ class FusionInferenceEngine:
         """Run multi-task fusion prediction."""
         optical_tensor = optical_tensor.to(self.device)
         sar_tensor = sar_tensor.to(self.device)
+        
+        norm_q = normalize_query(query)
         q_tensor = encode_question(
             query,
             self.word_to_id,
@@ -108,14 +137,22 @@ class FusionInferenceEngine:
 
         # Task 1: Bounding Box
         if task_hint == "bbox" or any(k in query_lower for k in ("where", "locate", "highlight", "find", "bbox", "region", "coordinates")):
-            box = outputs["bbox"][0].detach().cpu().tolist()
+            raw_box = outputs["bbox"][0].detach().cpu().tolist()
+            x1, y1, x2, y2 = raw_box[0], raw_box[1], raw_box[2], raw_box[3]
+            x_min, x_max = min(x1, x2), max(x1, x2)
+            y_min, y_max = min(y1, y2), max(y1, y2)
+            
+            box_coords = [round(x_min, 4), round(y_min, 4), round(x_max, 4), round(y_max, 4)]
+            conf = float(torch.softmax(outputs["binary"], dim=1)[0][1].item())
+
             return {
                 "task_sub_type": "bbox",
-                "answer": "Detected target spatial region corresponding to the multimodal query.",
-                "confidence": 0.85,
+                "answer": f"Localized target spatial region for query '{query}' in optical-SAR imagery.",
+                "confidence": round(conf, 4),
+                "normalized_query": norm_q,
                 "visual_evidence": {
                     "type": "bbox",
-                    "coordinates": box,
+                    "coordinates": box_coords,
                     "coordinate_system": "normalized",
                 },
             }
@@ -130,6 +167,7 @@ class FusionInferenceEngine:
                 "task_sub_type": "mcq",
                 "answer": pred_option,
                 "confidence": round(conf, 4),
+                "normalized_query": norm_q,
                 "visual_evidence": None,
                 "probabilities": {chr(ord("A") + i): round(p.item(), 4) for i, p in enumerate(probs)},
             }
@@ -144,6 +182,7 @@ class FusionInferenceEngine:
             "task_sub_type": "binary",
             "answer": answer,
             "confidence": round(conf, 4),
+            "normalized_query": norm_q,
             "visual_evidence": None,
             "probabilities": {
                 "NO": round(probs[0].item(), 4),

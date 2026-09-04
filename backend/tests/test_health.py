@@ -29,8 +29,8 @@ def test_health_check():
     assert models["fusion"] == "ready"
     assert models["grounding"] == "ready"
     assert models["change_vqa"] == "ready"
-    assert models["vqa"] == "not_ready"
-    assert models["captioning"] == "not_ready"
+    assert models["vqa"] == "ready"
+    assert models["captioning"] == "ready"
 
 
 def test_api_models_endpoint():

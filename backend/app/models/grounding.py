@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Ensure project root is in sys.path for models package resolution
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -32,9 +31,22 @@ def get_grounding_engine() -> GroundingInferenceEngine:
     global _ENGINE
     if _ENGINE is None:
         device = get_device()
-        weights_path = Path(settings.grounding_model_path)
+        
+        raw_path = Path(settings.grounding_model_path)
+        if raw_path.is_absolute() and raw_path.exists():
+            weights_path = raw_path
+        else:
+            weights_path = (_PROJECT_ROOT / settings.grounding_model_path).resolve()
+
         if not weights_path.exists():
-            weights_path = _PROJECT_ROOT / settings.grounding_model_path
+            alt_path = (_PROJECT_ROOT / "models" / "grounding" / "weights" / "spatial_grounding_model.pth").resolve()
+            if alt_path.exists():
+                weights_path = alt_path
+            else:
+                raise FileNotFoundError(
+                    f"Grounding model weights not found at '{weights_path}' or '{alt_path}'. "
+                    "Random weights fallbacks are disabled."
+                )
 
         vocab_path = Path("models/fusion/vocabulary.json")
         if not vocab_path.exists():
@@ -43,7 +55,7 @@ def get_grounding_engine() -> GroundingInferenceEngine:
             vocab_path = _PROJECT_ROOT / "datasets/processed/vocabulary.json"
 
         _ENGINE = GroundingInferenceEngine(
-            weights_path=weights_path if weights_path.exists() else None,
+            weights_path=weights_path,
             vocab_path=vocab_path,
             device=device,
         )
@@ -87,6 +99,7 @@ def run_module(
         "model_name": "satquery-region-grounding-v1",
         "parameters": {
             "query": query,
+            "normalized_query": result.get("normalized_query"),
             "coordinate_system": "normalized",
         },
     }

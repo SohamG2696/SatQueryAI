@@ -101,12 +101,12 @@ def test_query_change_vqa_flow():
     data = response.json()
 
     assert data["task_detected"] == "change_vqa"
-    assert data["answer"] in ("YES", "NO")
+    assert data["answer"].upper().startswith(("YES", "NO", "[")) or data.get("raw_answer") in ("YES", "NO")
     assert data["execution_summary"]["task_route"] == "bi_temporal_change_analysis"
 
 
-def test_query_vqa_placeholder_flow():
-    """Verify VQA placeholder flow."""
+def test_query_vqa_flow():
+    """Verify VQA flow with Person A VLM adapter."""
     img_bytes = _create_test_image_bytes()
 
     response = client.post(
@@ -122,11 +122,35 @@ def test_query_vqa_placeholder_flow():
     data = response.json()
 
     assert data["task_detected"] == "vqa"
-    assert "[VLM_PENDING]" in data["answer"]
+    assert isinstance(data["answer"], str)
+    assert len(data["answer"]) > 0
+    assert "satquery-vlm-person-a" in data["execution_summary"]["models_used"]
 
 
-def test_query_captioning_placeholder_flow():
-    """Verify Captioning placeholder flow."""
+def test_query_vlm_are_buildings_visible_routing():
+    """Verify routing and execution for 'Are buildings visible in this image?'."""
+    img_bytes = _create_test_image_bytes()
+
+    response = client.post(
+        "/api/query",
+        files=[
+            ("images", ("scene.png", io.BytesIO(img_bytes), "image/png")),
+        ],
+        data={
+            "query": "Are buildings visible in this image?",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["task_detected"] == "vqa"
+    assert isinstance(data["answer"], str)
+    assert len(data["answer"]) > 0
+    assert "satquery-vlm-person-a" in data["execution_summary"]["models_used"]
+
+
+def test_query_captioning_flow():
+    """Verify Captioning flow with Person A VLM adapter."""
     img_bytes = _create_test_image_bytes()
 
     response = client.post(
@@ -142,7 +166,9 @@ def test_query_captioning_placeholder_flow():
     data = response.json()
 
     assert data["task_detected"] == "captioning"
-    assert "[VLM_PENDING]" in data["answer"]
+    assert isinstance(data["answer"], str)
+    assert len(data["answer"]) > 0
+    assert "satquery-vlm-person-a" in data["execution_summary"]["models_used"]
 
 
 def test_history_endpoint():

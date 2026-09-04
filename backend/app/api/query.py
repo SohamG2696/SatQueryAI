@@ -10,11 +10,9 @@ and optional metadata. Returns evidence-grounded QueryResponse.
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
-from typing import Any, List, Optional
-from PIL import Image
+from typing import Any, List, Optional, Union
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -32,7 +30,7 @@ router = APIRouter(prefix="/api", tags=["Query"])
 @router.post("/query", response_model=QueryResponse)
 async def execute_query(
     query: str = Form(..., description="Natural language question or spatial instruction"),
-    images: Optional[List[UploadFile]] = File(None, description="One or two satellite image files"),
+    images: Optional[List[Union[UploadFile, str]]] = File(None, description="One or two satellite image files"),
     image_ids: Optional[str] = Form(None, description="Comma-separated image IDs (e.g. 'img_123,img_456')"),
     metadata: Optional[str] = Form(None, description="JSON string with modalities, dates, session_id, parameters"),
 ) -> QueryResponse:
@@ -56,16 +54,10 @@ async def execute_query(
     # Priority A: Direct file uploads in current request
     if images:
         for f in images:
-            content = await f.read()
-            if len(content) > 0:
-                try:
-                    pil_img = Image.open(io.BytesIO(content))
-                    image_sources.append(pil_img)
-                except Exception as exc:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Failed to decode uploaded image file '{f.filename}': {str(exc)}",
-                    )
+            if hasattr(f, "read") and getattr(f, "filename", None):
+                content = await f.read()
+                if len(content) > 0:
+                    image_sources.append(content)
 
     # Priority B: Referenced Image IDs from previous uploads
     if image_ids and image_ids.strip():

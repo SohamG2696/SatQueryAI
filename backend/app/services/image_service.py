@@ -1,11 +1,10 @@
 """
-SatQuery AI — Image Loading & Preprocessing Service.
+SatQuery AI — Image Ingestion and Tensor Preprocessing Service.
 
 Supports:
-- GeoTIFF / TIFF reading via Rasterio (preserving geospatial metadata, CRS, bounds, transform)
-- Standard image formats (PNG, JPG, JPEG) via Pillow
-- NumPy archives (.npz) used in remote sensing multimodal pairs
-- Channel extraction, spatial resizing, and tensor normalization for ML inference
+- GeoTIFF / TIFF preservation of spatial CRS, bounds, and transform via Rasterio
+- PNG, JPG, JPEG, NPZ array loading via PIL / NumPy
+- Tensor conversion for Optical (4 channels) and SAR (2 channels)
 """
 
 from __future__ import annotations
@@ -15,26 +14,27 @@ from pathlib import Path
 from typing import Any, Tuple
 
 import numpy as np
-from PIL import Image
 import torch
 import torch.nn.functional as F
+from PIL import Image
 
 try:
     import rasterio
+
     RASTERIO_AVAILABLE = True
 except ImportError:
     RASTERIO_AVAILABLE = False
 
 
 def load_image_array(
-    source: str | Path | bytes | io.BytesIO | np.ndarray,
+    source: str | Path | bytes | io.BytesIO | np.ndarray | Image.Image,
 ) -> Tuple[np.ndarray, dict[str, Any]]:
     """Load image data into a NumPy array [C, H, W] along with geospatial metadata.
 
     Parameters
     ----------
-    source : str | Path | bytes | io.BytesIO | np.ndarray
-        Path to file, bytes in memory, or raw array.
+    source : str | Path | bytes | io.BytesIO | np.ndarray | Image.Image
+        Path to file, bytes in memory, raw array, or PIL Image.
 
     Returns
     -------
@@ -65,7 +65,23 @@ def load_image_array(
         metadata["format"] = "numpy"
         return arr, metadata
 
-    # Case 2: File Path
+    # Case 2: Direct PIL Image instance
+    if isinstance(source, Image.Image):
+        img_rgba = source.convert("RGBA") if source.mode == "RGBA" else source.convert("RGB")
+        arr = np.array(img_rgba, dtype=np.float32)
+        if arr.ndim == 2:
+            arr = arr[np.newaxis, ...]
+        else:
+            arr = np.transpose(arr, (2, 0, 1))
+        metadata.update({
+            "width": source.width,
+            "height": source.height,
+            "bands": arr.shape[0],
+            "format": "pil_image",
+        })
+        return arr, metadata
+
+    # Case 3: File Path
     if isinstance(source, (str, Path)):
         path = Path(source)
         if not path.exists():
@@ -77,7 +93,6 @@ def load_image_array(
         if suffix == ".npz":
             data = np.load(path, allow_pickle=True)
             if "s2" in data and "s1" in data:
-                # Store both in metadata dict
                 s2 = data["s2"].astype(np.float32)
                 s1 = data["s1"].astype(np.float32)
                 metadata["format"] = "npz_fusion_pair"
@@ -115,14 +130,14 @@ def load_image_array(
             except Exception:
                 pass  # fallback to PIL below
 
-        # Standard image (or fallback) via PIL
+        # Standard image via PIL
         with Image.open(path) as img:
             img_rgba = img.convert("RGBA") if img.mode == "RGBA" else img.convert("RGB")
             arr = np.array(img_rgba, dtype=np.float32)
             if arr.ndim == 2:
                 arr = arr[np.newaxis, ...]
             else:
-                arr = np.transpose(arr, (2, 0, 1))  # [H, W, C] -> [C, H, W]
+                arr = np.transpose(arr, (2, 0, 1))
 
             metadata.update({
                 "width": img.width,
@@ -132,7 +147,7 @@ def load_image_array(
             })
             return arr, metadata
 
-    # Case 3: Bytes buffer
+    # Case 4: Bytes buffer
     if isinstance(source, (bytes, io.BytesIO)):
         buf = io.BytesIO(source) if isinstance(source, bytes) else source
         buf.seek(0)
@@ -178,38 +193,30 @@ def load_image_array(
 
 
 def prepare_optical_tensor(
-    source: str | Path | bytes | io.BytesIO | np.ndarray,
+    source: str | Path | bytes | io.BytesIO | np.ndarray | Image.Image,
     target_size: Tuple[int, int] = (224, 224),
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Load and format an optical image into [1, 4, H, W] normalized float tensor [0, 1].
-
-    If input has 3 channels (RGB), adds a simulated 4th NIR channel or duplicates.
-    If input has >4 channels (e.g. 12-band Sentinel-2), selects standard B02, B03, B04, B08.
-    """
+    """Load and format an optical image into [1, 4, H, W] normalized float tensor [0, 1]."""
     arr, _ = load_image_array(source)
 
-    # Normalize max range
     if arr.max() > 1.0:
         arr = arr / 255.0
 
     channels, h, w = arr.shape
 
-    # Channel adjustment to 4 channels
     if channels == 1:
         arr = np.repeat(arr, 4, axis=0)
     elif channels == 2:
         arr = np.concatenate([arr, arr], axis=0)
     elif channels == 3:
-        # Create NIR approximation from Red/Green average
         nir = (arr[0:1] * 0.5 + arr[1:2] * 0.5)
         arr = np.concatenate([arr, nir], axis=0)
     elif channels >= 4:
         arr = arr[:4]
 
-    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)  # [1, 4, H, W]
+    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)
 
-    # Spatial resize to target_size (e.g. 224x224)
     if (h, w) != target_size:
         tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)
 
@@ -221,15 +228,11 @@ def prepare_optical_tensor(
 
 
 def prepare_sar_tensor(
-    source: str | Path | bytes | io.BytesIO | np.ndarray,
+    source: str | Path | bytes | io.BytesIO | np.ndarray | Image.Image,
     target_size: Tuple[int, int] = (224, 224),
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Load and format a SAR image into [1, 2, H, W] normalized float tensor [0, 1].
-
-    If input has 1 channel (e.g. VV), duplicates to 2 channels [VH, VV].
-    If input has >=2 channels, takes first 2 channels.
-    """
+    """Load and format a SAR image into [1, 2, H, W] normalized float tensor [0, 1]."""
     arr, _ = load_image_array(source)
 
     if arr.max() > 1.0:
@@ -240,9 +243,9 @@ def prepare_sar_tensor(
     if channels == 1:
         arr = np.concatenate([arr, arr], axis=0)
     elif channels >= 2:
-        arr = arr[:2]
+        arr = np.concatenate([arr[:2]], axis=0)
 
-    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)  # [1, 2, H, W]
+    tensor = torch.tensor(arr, dtype=torch.float32).unsqueeze(0)
 
     if (h, w) != target_size:
         tensor = F.interpolate(tensor, size=target_size, mode="bilinear", align_corners=False)

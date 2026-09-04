@@ -1,0 +1,205 @@
+{
+  "image_processor": {
+    "do_convert_rgb": true,
+    "do_normalize": true,
+    "do_pad": true,
+    "do_rescale": true,
+    "do_resize": true,
+    "image_grid_pinpoints": [
+      [
+        384,
+        384
+      ],
+      [
+        384,
+        768
+      ],
+      [
+        384,
+        1152
+      ],
+      [
+        384,
+        1536
+      ],
+      [
+        384,
+        1920
+      ],
+      [
+        384,
+        2304
+      ],
+      [
+        768,
+        384
+      ],
+      [
+        768,
+        768
+      ],
+      [
+        768,
+        1152
+      ],
+      [
+        768,
+        1536
+      ],
+      [
+        768,
+        1920
+      ],
+      [
+        768,
+        2304
+      ],
+      [
+        1152,
+        384
+      ],
+      [
+        1152,
+        768
+      ],
+      [
+        1152,
+        1152
+      ],
+      [
+        1152,
+        1536
+      ],
+      [
+        1152,
+        1920
+      ],
+      [
+        1152,
+        2304
+      ],
+      [
+        1536,
+        384
+      ],
+      [
+        1536,
+        768
+      ],
+      [
+        1536,
+        1152
+      ],
+      [
+        1536,
+        1536
+      ],
+      [
+        1536,
+        1920
+      ],
+      [
+        1536,
+        2304
+      ],
+      [
+        1920,
+        384
+      ],
+      [
+        1920,
+        768
+      ],
+      [
+        1920,
+        1152
+      ],
+      [
+        1920,
+        1536
+      ],
+      [
+        1920,
+        1920
+      ],
+      [
+        1920,
+        2304
+      ],
+      [
+        2304,
+        384
+      ],
+      [
+        2304,
+        768
+      ],
+      [
+        2304,
+        1152
+      ],
+      [
+        2304,
+        1536
+      ],
+      [
+        2304,
+        1920
+      ],
+      [
+        2304,
+        2304
+      ]
+    ],
+    "image_mean": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "image_processor_type": "LlavaOnevisionImageProcessor",
+    "image_std": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "resample": 3,
+    "rescale_factor": 0.00392156862745098,
+    "size": {
+      "height": 384,
+      "width": 384
+    }
+  },
+  "image_token": "<image>",
+  "num_image_tokens": 729,
+  "processor_class": "LlavaOnevisionProcessor",
+  "video_processor": {
+    "default_to_square": false,
+    "do_convert_rgb": true,
+    "do_normalize": true,
+    "do_pad": true,
+    "do_rescale": true,
+    "do_resize": true,
+    "do_sample_frames": false,
+    "image_mean": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "image_std": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "resample": 3,
+    "rescale_factor": 0.00392156862745098,
+    "return_metadata": false,
+    "size": {
+      "height": 384,
+      "width": 384
+    },
+    "video_processor_type": "LlavaOnevisionVideoProcessor"
+  },
+  "video_token": "<video>",
+  "vision_aspect_ratio": "anyres_max_9",
+  "vision_feature_select_strategy": "full"
+}

@@ -12,6 +12,7 @@ from typing import Any, Dict
 from app.schemas.execution import ExecutionSummary, VisualEvidence
 from app.schemas.response import QueryResponse
 from app.services.confidence_service import calibrate_confidence
+from app.services.verification_service import verify_execution_result
 
 
 def assemble_query_response(
@@ -40,7 +41,7 @@ def assemble_query_response(
     model_name = model_output.get("model_name", f"satquery-{task}-model")
     raw_evidence = model_output.get("visual_evidence")
     proc_time_ms = float(model_output.get("processing_time_ms", 0.0))
-    params = model_output.get("parameters", {})
+    params = dict(model_output.get("parameters", {}))
 
     # 1. Calibrate Confidence
     calibrated_conf, _ = calibrate_confidence(raw_confidence, task=task)
@@ -57,7 +58,16 @@ def assemble_query_response(
     elif raw_evidence is None:
         visual_evidence = VisualEvidence(type="none")
 
-    # 3. Assemble Execution Summary
+    # 3. Evaluate Verification Status
+    verification = verify_execution_result(
+        task=task,
+        answer=raw_answer,
+        confidence=calibrated_conf,
+        visual_evidence=raw_evidence if isinstance(raw_evidence, dict) else None,
+    )
+    params["verification"] = verification.model_dump()
+
+    # 4. Assemble Execution Summary
     execution_summary = ExecutionSummary(
         models_used=[model_name],
         parameters=params,
@@ -71,4 +81,5 @@ def assemble_query_response(
         confidence=calibrated_conf,
         visual_evidence=visual_evidence,
         execution_summary=execution_summary,
+        verification=verification,
     )

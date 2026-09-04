@@ -11,7 +11,7 @@ from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
 from .execution import ExecutionSummary, VisualEvidence
-from .upload import UploadResponse
+from app.services.verification_service import VerificationDetails
 
 
 class QueryResponse(BaseModel):
@@ -38,6 +38,10 @@ class QueryResponse(BaseModel):
     execution_summary: ExecutionSummary = Field(
         ...,
         description="Factual execution trace including models used, route, and processing latency.",
+    )
+    verification: Optional[VerificationDetails] = Field(
+        default=None,
+        description="Verification layer metadata ('accepted' or 'verify_required').",
     )
 
 

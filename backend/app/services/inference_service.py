@@ -38,6 +38,9 @@ class InferenceService:
             from app.models.change_vqa import get_change_vqa_engine
             get_change_vqa_engine()
 
+            from models.vlm.vlm_adapter import get_vlm_adapter
+            get_vlm_adapter()
+
             self._warmed_up = True
         except Exception as e:
             log_error("InferenceService.warm_up", e)
