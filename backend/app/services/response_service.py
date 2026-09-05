@@ -19,6 +19,7 @@ def assemble_query_response(
     task: str,
     task_route: str,
     model_output: Dict[str, Any],
+    query: str = "",
 ) -> QueryResponse:
     """Normalize and assemble model output into QueryResponse.
 
@@ -30,6 +31,8 @@ def assemble_query_response(
         Structured route string (e.g. 'two_image_cross_modal_fusion').
     model_output : Dict[str, Any]
         Raw dictionary returned from the model adapter.
+    query : str, optional
+        Original user query for interpretation.
 
     Returns
     -------
@@ -67,7 +70,33 @@ def assemble_query_response(
     )
     params["verification"] = verification.model_dump()
 
-    # 4. Assemble Execution Summary
+    # 4. Apply Result Interpretation Layer
+    final_answer = raw_answer
+    try:
+        from app.services.result_interpreter import interpret_result
+        interp = interpret_result(
+            query=query,
+            task=task,
+            result=model_output,
+            evidence=raw_evidence if isinstance(raw_evidence, dict) else None,
+            confidence=calibrated_conf,
+            metadata=params,
+        )
+        formatted = interp.to_formatted_answer()
+        if formatted:
+            final_answer = formatted
+        params["interpretation"] = {
+            "summary": interp.summary,
+            "key_findings": interp.key_findings,
+            "technical_interpretation": interp.technical_interpretation,
+            "confidence_explanation": interp.confidence_explanation,
+            "limitations": interp.limitations,
+        }
+    except Exception:
+        # Interpretation failure must never break underlying model response
+        final_answer = raw_answer
+
+    # 5. Assemble Execution Summary
     execution_summary = ExecutionSummary(
         models_used=[model_name],
         parameters=params,
@@ -77,7 +106,7 @@ def assemble_query_response(
 
     return QueryResponse(
         task_detected=task,
-        answer=raw_answer,
+        answer=final_answer,
         confidence=calibrated_conf,
         visual_evidence=visual_evidence,
         execution_summary=execution_summary,

@@ -21,7 +21,6 @@ from app.config import settings
 from app.services.inference_service import inference_service
 from app.utils.device import get_device, get_device_info
 
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Lifespan Hook — Startup & Shutdown
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

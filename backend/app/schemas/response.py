@@ -19,7 +19,7 @@ class QueryResponse(BaseModel):
 
     task_detected: str = Field(
         ...,
-        description="Task identified by agent controller: 'vqa', 'captioning', 'grounding', 'change_vqa', 'fusion'.",
+        description="Task identified by agent controller: 'vqa', 'captioning', 'grounding', 'change_vqa', 'fusion', 'multi_model'.",
     )
     answer: str = Field(
         ...,
@@ -30,6 +30,14 @@ class QueryResponse(BaseModel):
         ge=0.0,
         le=1.0,
         description="Defensible model confidence score (0.0 - 1.0) or null if indeterminate.",
+    )
+    confidence_by_task: Optional[dict[str, float]] = Field(
+        default=None,
+        description="Per-task confidence mapping for multi-model execution.",
+    )
+    synthesis: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Structured multi-model synthesis summary, findings, and evidence quality.",
     )
     visual_evidence: Optional[VisualEvidence] = Field(
         default=None,

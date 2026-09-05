@@ -1,75 +1,70 @@
 """
-SatQuery AI — Deterministic Task Router.
+SatQuery AI — Task-Aware Deterministic Task Router.
 
-Maps input configuration (image count, modalities, dates, query intent)
-to the appropriate specialist remote-sensing task and structured route name.
+Maps structured AnalysisPlan to the appropriate specialist remote-sensing task
+and route string.
 """
 
 from __future__ import annotations
 
-from typing import List, Tuple
-
-from .intent_classifier import detect_all_intents, classify_query_intent
+from typing import Any, List, Optional, Tuple
 
 
 def get_route_info(
     query: str,
-    image_count: int,
+    image_count: int = 0,
     modalities: list[str] | None = None,
     dates: list[str] | None = None,
+    plan: Any | None = None,
 ) -> Tuple[str, str, List[str]]:
     """Determine routing for query and images, returning (task, task_route, tasks_list)."""
-    if image_count < 1:
-        raise ValueError("At least one satellite image is required.")
+    if plan is None:
+        from app.agent.planner import build_analysis_plan
+        meta = {"modalities": modalities, "dates": dates}
+        plan = build_analysis_plan(query, image_count=image_count, metadata=meta)
 
-    mods = [m.lower().strip() for m in (modalities or [])]
-    dates = dates or []
-    intents = detect_all_intents(query)
+    primary = plan.primary_task
+    sub_tasks = getattr(plan, "sub_tasks", [primary])
 
-    has_optical = any("optical" in m or "rgb" in m for m in mods)
-    has_sar = any("sar" in m or "radar" in m for m in mods)
-    has_diff_dates = (len(dates) >= 2 and dates[0] != dates[1])
+    if primary == "gee":
+        return "gee", "google_earth_engine_fetch", ["gee"]
 
-    # 1. Multi-Model Route (query contains multiple distinct intents)
-    if len(intents) > 1:
-        task_route = f"multi_model_{'_and_'.join(intents)}"
-        return "multi_model", task_route, intents
+    if primary == "multi_model":
+        task_route = f"multi_model_{'_and_'.join(sub_tasks)}"
+        return "multi_model", task_route, sub_tasks
 
-    # Single intent detected
-    intent = intents[0] if intents else "captioning"
-
-    # 2. Cross-Modal Fusion (explicit fusion intent or optical+SAR modalities)
-    if (has_optical and has_sar) or intent == "fusion":
+    if primary == "fusion":
         return "fusion", "two_image_cross_modal_fusion", ["fusion"]
 
-    # 3. Bi-Temporal Change Detection (explicit change intent or different dates)
-    if has_diff_dates or intent == "change_vqa":
+    if primary in ("change_vqa", "change"):
         return "change_vqa", "bi_temporal_change_analysis", ["change_vqa"]
 
-    # 4. Region Grounding
-    if intent == "grounding":
+    if primary == "grounding":
         route = "multi_image_region_grounding" if image_count >= 2 else "single_image_region_grounding"
         return "grounding", route, ["grounding"]
 
-    # 5. Image Captioning
-    if intent in ("captioning", "empty"):
+    if primary == "captioning":
         return "captioning", "single_image_captioning", ["captioning"]
 
-    # 6. Fallback VQA
     return "vqa", "single_image_vqa", ["vqa"]
 
 
 def route_request(
     query: str,
-    image_count: int,
+    image_count: int = 0,
     modalities: list[str] | None = None,
     dates: list[str] | None = None,
 ) -> Tuple[str, str]:
     """Route request to canonical task name and route name (backward compatible)."""
+    from app.agent.planner import build_analysis_plan, validate_plan_inputs
+    meta = {"modalities": modalities, "dates": dates}
+    plan = build_analysis_plan(query, image_count=image_count, metadata=meta)
     task, task_route, _ = get_route_info(
         query=query,
         image_count=image_count,
         modalities=modalities,
         dates=dates,
+        plan=plan,
     )
+    validate_plan_inputs(plan, image_count, modalities)
     return task, task_route

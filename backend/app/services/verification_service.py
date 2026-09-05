@@ -2,8 +2,10 @@
 SatQuery AI — Factual Verification Service.
 
 Evaluates single and multi-model outputs deterministically to assign a verification status:
-- 'accepted': High confidence score and consistent cross-task visual evidence.
-- 'verify_required': Low confidence score, missing required evidence, or conflicting outputs.
+- 'accepted': Model executed successfully and met confidence/evidence requirements.
+- 'verify_required': Low confidence score, missing required evidence, or indeterminate outputs.
+
+Distinguishes execution validation and model confidence from ground-truth verification.
 """
 
 from __future__ import annotations
@@ -31,6 +33,34 @@ class VerificationDetails(BaseModel):
         le=1.0,
         description="Calibrated confidence score evaluated.",
     )
+
+
+def get_confidence_description(conf: float | None) -> str:
+    """Return a factual, non-misleading description of a model confidence score.
+
+    Guidelines:
+    - < 0.50: Low confidence; interpret with caution.
+    - 0.50 - 0.75: Moderate confidence; interpret with caution.
+    - 0.75 - 0.90: Relatively high model confidence, but not independently verified.
+    - > 0.90: High model confidence, but confidence is not equivalent to accuracy.
+    """
+    if conf is None:
+        return "Model confidence is indeterminate."
+
+    c = float(conf)
+    if c > 1.0:
+        c = c / 100.0
+
+    pct = c * 100
+
+    if c < 0.50:
+        return f"The model reports low confidence ({pct:.2f}%); interpret with caution."
+    elif c <= 0.75:
+        return f"The model reports moderate confidence ({pct:.2f}%); interpret with caution."
+    elif c <= 0.90:
+        return f"The model reports relatively high confidence ({pct:.2f}%); this does not represent independently measured prediction accuracy."
+    else:
+        return f"The model reports high confidence ({pct:.2f}%); note that model confidence is not equivalent to ground-truth accuracy."
 
 
 def verify_execution_result(
@@ -77,24 +107,23 @@ def verify_execution_result(
         if low_conf_tasks:
             return VerificationDetails(
                 status="verify_required",
-                reason=f"Sub-task(s) '{', '.join(low_conf_tasks)}' scored below verification threshold ({conf_threshold:.2f}).",
+                reason=f"Execution completed. Sub-task(s) '{', '.join(low_conf_tasks)}' scored below verification threshold ({conf_threshold:.2f}).",
                 confidence=round(min(sub_confidences), 4) if sub_confidences else confidence,
             )
 
-        # Check for grounding evidence if grounding is one of the sub-tasks
         has_grounding = any(r.get("task") in ("grounding", "bbox") for r in sub_results)
         if has_grounding and visual_evidence:
             ev_type = visual_evidence.get("type", "none")
             if ev_type == "none" or not visual_evidence.get("coordinates"):
                 return VerificationDetails(
                     status="verify_required",
-                    reason="Grounding sub-task expected bounding box evidence but none was produced.",
+                    reason="Execution completed. Grounding sub-task expected bounding box evidence but none was produced.",
                     confidence=confidence,
                 )
 
         return VerificationDetails(
             status="accepted",
-            reason=f"Multi-model execution consistent across {len(sub_results)} sub-tasks with high confidence.",
+            reason=f"Multi-model execution completed across {len(sub_results)} sub-tasks. {get_confidence_description(confidence)}",
             confidence=confidence,
         )
 
@@ -104,7 +133,7 @@ def verify_execution_result(
         if conf_val < conf_threshold:
             return VerificationDetails(
                 status="verify_required",
-                reason=f"Model confidence ({conf_val:.4f}) is below verification threshold ({conf_threshold:.2f}).",
+                reason=f"Model execution completed. {get_confidence_description(conf_val)} Scored below verification threshold ({conf_threshold:.2f}).",
                 confidence=round(conf_val, 4),
             )
 
@@ -113,7 +142,7 @@ def verify_execution_result(
         if not visual_evidence or visual_evidence.get("type") == "none" or not visual_evidence.get("coordinates"):
             return VerificationDetails(
                 status="verify_required",
-                reason="Spatial region grounding result lacks valid visual bounding box evidence.",
+                reason="Model execution completed, but spatial region grounding result lacks valid visual bounding box evidence.",
                 confidence=confidence,
             )
 
@@ -121,14 +150,14 @@ def verify_execution_result(
     if not answer or "not_ready" in answer.lower() or "[vlm_pending]" in answer.lower():
         return VerificationDetails(
             status="verify_required",
-            reason="Output answer is unconfirmed or model status is indeterminate.",
+            reason="Model execution completed, but output answer is unconfirmed or model status is indeterminate.",
             confidence=confidence,
         )
 
-    # 5. Default High-Confidence Acceptance
+    # 5. Default Execution Acceptance with Factual Confidence Description
     conf_disp = round(float(confidence), 4) if confidence is not None else 0.85
     return VerificationDetails(
         status="accepted",
-        reason=f"Model output verified successfully with high confidence ({conf_disp:.4f}).",
+        reason=f"Model execution completed successfully. {get_confidence_description(conf_disp)}",
         confidence=conf_disp,
     )

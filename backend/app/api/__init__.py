@@ -10,6 +10,7 @@ from .grounding import router as grounding_router
 from .change import router as change_router
 from .fusion import router as fusion_router
 from .agent import router as agent_router
+from .gee import router as gee_router
 
 all_routers = [
     query_router,
@@ -22,6 +23,7 @@ all_routers = [
     grounding_router,
     change_router,
     fusion_router,
+    gee_router,
 ]
 
 __all__ = [
@@ -35,5 +37,6 @@ __all__ = [
     "grounding_router",
     "change_router",
     "fusion_router",
+    "gee_router",
     "all_routers",
 ]

@@ -42,9 +42,9 @@ def detect_modality(
     # 1. Explicit Client Metadata Preference
     if explicit_modality and explicit_modality.strip():
         mod = explicit_modality.strip().lower()
-        if mod in ("optical", "rgb", "true_color", "multispectral"):
+        if mod in ("optical", "rgb", "true_color", "multispectral", "sentinel-2", "sentinel2", "s2"):
             return {"modality": "optical", "detection_method": "metadata"}
-        elif mod in ("sar", "radar", "sentinel1", "s1"):
+        elif mod in ("sar", "radar", "sentinel1", "s1", "sentinel-1"):
             return {"modality": "sar", "detection_method": "metadata"}
         return {"modality": mod, "detection_method": "metadata"}
 

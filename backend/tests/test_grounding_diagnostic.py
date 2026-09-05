@@ -35,9 +35,9 @@ def test_grounding_checkpoint_and_query_differentiation():
         device=torch.device("cpu"),
     )
 
-    # 1. Verify token IDs for 'roads' vs 'buildings'
-    q_roads = "Locate the roads in the image."
-    q_buildings = "Locate the buildings in the image."
+    # 1. Verify token IDs for 'urban' vs 'water'
+    q_roads = "Locate the urban areas in the image."
+    q_buildings = "Locate the water bodies in the image."
 
     norm_roads = normalize_query(q_roads)
     norm_buildings = normalize_query(q_buildings)
@@ -48,16 +48,16 @@ def test_grounding_checkpoint_and_query_differentiation():
     ids_roads = t_roads[0][:8].tolist()
     ids_buildings = t_buildings[0][:8].tolist()
 
-    assert ids_roads != ids_buildings, f"Token IDs for roads and buildings are identical: {ids_roads}"
+    assert ids_roads != ids_buildings, f"Token IDs for urban and water are identical: {ids_roads}"
 
     # 2. Verify bounding box prediction differentiation
     img_tensor = torch.rand(1, 4, 224, 224)
 
     queries = [
-        "Locate the roads in the image.",
-        "Locate the buildings in the image.",
-        "Locate the water tank in the image.",
-        "Locate vegetation in the image.",
+        "Locate the urban areas in the image.",
+        "Locate the water bodies in the image.",
+        "Locate the forest in the image.",
+        "Locate agriculture in the image.",
     ]
 
     results = {}

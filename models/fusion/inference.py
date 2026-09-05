@@ -16,14 +16,22 @@ import torch
 
 from .model import MultiTaskFusionModel
 
-# Safe linguistic normalization dictionary preserving target object semantics
-FUSION_SYNONYMS: dict[str, str] = {
-    "road": "roads",
-    "building": "buildings",
-    "tree": "trees",
-    "vehicle": "vehicles",
-    "car": "cars",
-    "field": "fields",
+# Domain synonym normalization mapping for query tokenization
+FUSION_SYNONYMS = {
+    "roads": "urban",
+    "road": "urban",
+    "buildings": "industrial",
+    "building": "industrial",
+    "tanks": "water",
+    "tank": "water",
+    "vehicles": "urban",
+    "vehicle": "urban",
+    "cars": "urban",
+    "car": "urban",
+    "trees": "forest",
+    "tree": "forest",
+    "fields": "agriculture",
+    "field": "agriculture",
 }
 
 
@@ -58,92 +66,6 @@ def encode_question(
     if device is not None:
         tensor = tensor.to(device)
     return tensor
-
-
-def is_mcq_query(query: str, task_hint: str | None = None) -> bool:
-    """Determine if query is a multiple-choice question (MCQ)."""
-    if task_hint == "mcq":
-        return True
-    if task_hint is not None and task_hint != "auto":
-        return False
-
-    q_lower = query.lower()
-
-    mcq_keywords = (
-        "option",
-        "which of the following",
-        "which category",
-        "which class",
-        "which type",
-        "which of these",
-        "best describes",
-        "choose",
-        "select",
-        "(a)",
-        "(b)",
-        "(c)",
-        "(d)",
-        "a)",
-        "b)",
-        "c)",
-        "d)",
-        "a.",
-        "b.",
-    )
-
-    if any(k in q_lower for k in mcq_keywords):
-        return True
-
-    # Check for lists with ' or ' (e.g. "x, y, or z" or "x, y, z, or w")
-    if " or " in q_lower and ("," in q_lower or ":" in q_lower or "?" in q_lower):
-        parts = [p.strip() for p in re.split(r"[,;]|\bor\b", q_lower) if p.strip()]
-        if len(parts) >= 3:
-            return True
-
-    return False
-
-
-def parse_mcq_options(query: str) -> dict[str, str]:
-    """Parse MCQ options (A/B/C/D) from a natural language query string."""
-    options = {}
-    q_text = query.strip()
-
-    matches = list(re.finditer(r'(?:^|[\s,;:(])(?:\(?([A-Da-d])[\)\.]|\b([A-Da-d])\))\s*', q_text))
-    if len(matches) >= 2:
-        for i in range(len(matches)):
-            m = matches[i]
-            letter = (m.group(1) or m.group(2)).upper()
-            start_idx = m.end()
-            end_idx = matches[i+1].start() if i + 1 < len(matches) else len(q_text)
-            val = q_text[start_idx:end_idx].strip().rstrip(",;.? \t\n")
-            if val and letter not in options:
-                options[letter] = val
-        if len(options) >= 2:
-            return options
-
-    if ":" in q_text:
-        after_colon = q_text.split(":", 1)[1].rstrip("?")
-        parts = [p.strip() for p in re.split(r"[,;]|\bor\b", after_colon) if p.strip()]
-        if len(parts) >= 2:
-            letters = ["A", "B", "C", "D"]
-            for i, p in enumerate(parts[:4]):
-                clean_p = re.sub(r'^\(?[A-Da-d][\)\.]\s*', '', p).strip()
-                if clean_p:
-                    options[letters[i]] = clean_p
-            return options
-
-    if " or " in q_text.lower():
-        raw = re.sub(r'^(?:which|select|choose|describe|what is).*?:\s*', '', q_text, flags=re.IGNORECASE).rstrip("?")
-        parts = [p.strip() for p in re.split(r"[,;]|\bor\b", raw) if p.strip()]
-        if len(parts) >= 2:
-            letters = ["A", "B", "C", "D"]
-            for i, p in enumerate(parts[:4]):
-                clean_p = re.sub(r'^\(?[A-Da-d][\)\.]\s*', '', p).strip()
-                if clean_p:
-                    options[letters[i]] = clean_p
-            return options
-
-    return options
 
 
 class FusionInferenceEngine:
@@ -213,8 +135,18 @@ class FusionInferenceEngine:
 
         query_lower = query.lower()
 
+        # Resolve task subtype from task_hint or natural language query keywords
+        resolved_task = task_hint if task_hint in ("bbox", "mcq", "binary") else None
+        if not resolved_task:
+            if any(k in query_lower for k in ("option", "which of the following", "(a)", "(b)", "(c)", "(d)", "a)", "b)", "category")):
+                resolved_task = "mcq"
+            elif any(k in query_lower for k in ("where", "locate", "highlight", "draw box", "bounding box", "bbox", "show location", "coordinates")):
+                resolved_task = "bbox"
+            else:
+                resolved_task = "binary"
+
         # Task 1: Bounding Box
-        if task_hint == "bbox" or (task_hint is None and any(k in query_lower for k in ("where", "locate", "highlight", "find", "bbox", "region", "coordinates"))):
+        if resolved_task == "bbox":
             raw_box = outputs["bbox"][0].detach().cpu().tolist()
             x1, y1, x2, y2 = raw_box[0], raw_box[1], raw_box[2], raw_box[3]
             x_min, x_max = min(x1, x2), max(x1, x2)
@@ -236,33 +168,18 @@ class FusionInferenceEngine:
             }
 
         # Task 2: MCQ
-        if is_mcq_query(query, task_hint=task_hint):
+        if resolved_task == "mcq":
             probs = torch.softmax(outputs["mcq"], dim=1)[0]
             pred_idx = probs.argmax().item()
             conf = probs[pred_idx].item()
             pred_option = chr(ord("A") + pred_idx)
-
-            parsed_options = parse_mcq_options(query)
-            selected_text = parsed_options.get(pred_option)
-            if selected_text:
-                answer = f"{pred_option} ({selected_text})"
-            else:
-                answer = pred_option
-
-            prob_dict = {}
-            for i, p in enumerate(probs):
-                opt_letter = chr(ord("A") + i)
-                opt_label = f"{opt_letter} ({parsed_options[opt_letter]})" if opt_letter in parsed_options else opt_letter
-                prob_dict[opt_label] = round(p.item(), 4)
-
             return {
                 "task_sub_type": "mcq",
-                "answer": answer,
+                "answer": pred_option,
                 "confidence": round(conf, 4),
                 "normalized_query": norm_q,
                 "visual_evidence": None,
-                "options": parsed_options if parsed_options else None,
-                "probabilities": prob_dict,
+                "probabilities": {chr(ord("A") + i): round(p.item(), 4) for i, p in enumerate(probs)},
             }
 
         # Task 3: Binary YES/NO (Default)

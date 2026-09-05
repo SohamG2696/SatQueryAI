@@ -34,6 +34,19 @@ async def optical_sar_fusion(req: FusionRequest) -> AnalysisResponse:
     """Analyze co-registered optical and SAR images through cross-modal fusion."""
     start = time.time()
 
+    # Validate non-empty inputs
+    if not req.optical_image_id or not req.optical_image_id.strip() or not req.sar_image_id or not req.sar_image_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Both optical_image_id and sar_image_id are required.",
+        )
+
+    if req.optical_image_id.strip() == req.sar_image_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Optical and SAR image IDs must be distinct.",
+        )
+
     # Resolve paths
     opt_path = UPLOADED_IMAGES.get(req.optical_image_id)
     if not opt_path:
