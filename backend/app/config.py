@@ -6,7 +6,6 @@ Loads settings from environment variables and backend/.env file.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import List
 
@@ -43,15 +42,29 @@ class Settings(BaseSettings):
     # ── Model Paths ──────────────────────────────────────────────
     vqa_model_path: str = "models/vlm/weights"
     caption_model_path: str = "models/vlm/weights"
-    grounding_model_path: str = "models/grounding/weights/spatial_grounding_model.pth"
-    change_vqa_model_path: str = "models/change_vqa/weights/checkpoint_best.pth"
-    fusion_model_path: str = "models/fusion/weights/multitask_fusion_model_final.pth"
+
+    # Trained Semantic Grounding checkpoint
+    grounding_model_path: str = (
+        "models/grounding/weights/spatial_grounding_model.pth"
+    )
+
+    # Trained ChangeFormerV6 checkpoint
+    change_vqa_model_path: str = (
+        "models/change_vqa/weights/checkpoint_best.pth"
+    )
+
+    # Fusion model
+    fusion_model_path: str = (
+        "models/fusion/weights/multitask_fusion_model_final.pth"
+    )
 
     # ── Confidence & Evaluation ──────────────────────────────────
     confidence_threshold: float = 0.50
 
     # ── CORS ─────────────────────────────────────────────────────
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
 
     # ── Logging ──────────────────────────────────────────────────
     log_level: str = "INFO"
@@ -69,11 +82,19 @@ class Settings(BaseSettings):
 
     @property
     def allowed_extensions_list(self) -> List[str]:
-        return [ext.strip().lower() for ext in self.allowed_image_extensions.split(",") if ext.strip()]
+        return [
+            ext.strip().lower()
+            for ext in self.allowed_image_extensions.split(",")
+            if ext.strip()
+        ]
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
 
 
 # Global singleton settings instance

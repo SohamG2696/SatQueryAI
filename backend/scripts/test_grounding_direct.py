@@ -59,8 +59,8 @@ def run_test():
             print(f"  Word -> ID map    : {word_id_breakdown}")
 
             # Question features
-            emb = engine.model.embedding(q_tokens)
-            _, hidden = engine.model.gru(emb)
+            emb = engine.model.question_encoder.embedding(q_tokens)
+            _, hidden = engine.model.question_encoder.gru(emb)
             q_feat = hidden[-1]  # [1, 128]
             q_feats[q] = q_feat
 
