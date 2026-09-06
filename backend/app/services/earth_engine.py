@@ -13,12 +13,15 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
-import ee
-
 try:
-    ee.Initialize(project="satquery-ai-507618")
-except Exception as e:
-    print(f"Warning: Failed to initialize Earth Engine: {e}")
+    import ee
+    try:
+        ee.Initialize(project="satquery-ai-507618")
+    except Exception as e:
+        print(f"Warning: Failed to initialize Earth Engine: {e}")
+except ImportError:
+    ee = None
+    print("Warning: earthengine-api ('ee') module not installed. GEE operations will use offline fallbacks.")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

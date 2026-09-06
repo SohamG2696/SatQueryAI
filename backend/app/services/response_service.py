@@ -56,7 +56,7 @@ def assemble_query_response(
             type=raw_evidence.get("type", "none"),
             coordinates=raw_evidence.get("coordinates"),
             coordinate_system=raw_evidence.get("coordinate_system", "normalized"),
-            data=raw_evidence.get("data"),
+            data=raw_evidence.get("data") if raw_evidence.get("data") is not None else raw_evidence,
         )
     elif raw_evidence is None:
         visual_evidence = VisualEvidence(type="none")

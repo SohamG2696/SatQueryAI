@@ -81,3 +81,5 @@ uploads/*
 
 # Git LFS / large checkpoint directories
 models/change_vqa/weights/checkpoint_best/
+# Local model backup files
+*.pth.bak_changeformer

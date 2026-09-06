@@ -46,7 +46,7 @@ class Interpretation:
             parts.append(clean_sum)
 
         if self.key_findings:
-            bullets = "\n".join(f"- {re.sub(r'\.{2,}', '.', f).strip()}" for f in self.key_findings)
+            bullets = "\n".join("- " + re.sub(r"\.{2,}", ".", f).strip() for f in self.key_findings)
             parts.append(f"Key findings:\n{bullets}")
 
         if self.technical_interpretation:
