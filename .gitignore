@@ -39,6 +39,7 @@ backend/uploads/*
 !backend/uploads/optical/.gitkeep
 !backend/uploads/sar/.gitkeep
 !backend/uploads/temporary/.gitkeep
+backend/backend/
 
 # Large dataset files (keep parquet/csv pointers)
 datasets/processed/fusion/
@@ -68,6 +69,7 @@ datasets/processed/vqa_splits/*.csv
 
 # Training checkpoints
 datasets/processed/checkpoints/
+models/vlm/adapter/
 
 # Generated evaluation/training files
 datasets/processed/700_question_evaluation.csv

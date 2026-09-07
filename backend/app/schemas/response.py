@@ -19,7 +19,31 @@ class QueryResponse(BaseModel):
 
     task_detected: str = Field(
         ...,
-        description="Task identified by agent controller: 'vqa', 'captioning', 'grounding', 'change_vqa', 'fusion', 'multi_model'.",
+        description="Task identified by agent controller: 'vqa', 'captioning', 'scene_description', 'grounding', 'change_vqa', 'fusion', 'gee', 'multi_model', 'invalid'.",
+    )
+    valid: Optional[bool] = Field(
+        default=True,
+        description="Indicates whether the user query is a valid supported remote sensing task.",
+    )
+    canonical_task: Optional[str] = Field(
+        default=None,
+        description="Normalized canonical task name ('scene_description', 'grounding', 'vqa', 'change_vqa', 'fusion', etc.).",
+    )
+    intent: Optional[str] = Field(
+        default=None,
+        description="Detected user intent category.",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="Explanation or justification when a query is invalid or routed.",
+    )
+    target: Optional[str] = Field(
+        default=None,
+        description="Extracted spatial grounding or analysis target entity.",
+    )
+    operation: Optional[str] = Field(
+        default=None,
+        description="Extracted operation type ('locate', 'scene_description', 'index_calculation', etc.).",
     )
     answer: str = Field(
         ...,

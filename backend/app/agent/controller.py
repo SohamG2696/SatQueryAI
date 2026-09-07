@@ -14,9 +14,11 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from app.agent.model_registry import registry
+from app.agent.query_validator import validate_query_intent
 from app.agent.router import get_route_info
 from app.schemas.execution import ExecutionSummary, VisualEvidence
 from app.schemas.response import QueryResponse
+from app.services.cache_service import inference_cache
 from app.services.inference_service import inference_service
 from app.services.response_service import assemble_query_response
 from app.services.result_interpreter import decompose_query, synthesize_multi_model_results
@@ -57,13 +59,68 @@ class AgenticController:
         clean_query = validate_query(query, required=False)
         image_count = len(images)
 
+        # 0. Query Validation & Normalization Layer (STEP 1 & 2)
+        validation = validate_query_intent(
+            query=clean_query,
+            image_count=image_count,
+            metadata=meta,
+        )
+
+        # Early Rejection for Out-of-Domain / Invalid queries — ZERO model execution
+        if not validation.valid:
+            rejection_reason = validation.reason or "This query is outside SatQuery's supported remote-sensing tasks."
+            return QueryResponse(
+                valid=False,
+                task_detected="invalid",
+                canonical_task="invalid",
+                intent="invalid",
+                reason=rejection_reason,
+                answer="This query is outside SatQuery's supported remote-sensing tasks.",
+                confidence=0.0,
+                visual_evidence=VisualEvidence(type="none"),
+                execution_summary=ExecutionSummary(
+                    models_used=[],
+                    parameters={
+                        "valid": False,
+                        "reason": rejection_reason,
+                        "original_query": clean_query,
+                        "execution_trace": [
+                            "Query validation layer evaluated query",
+                            f"Query rejected: {rejection_reason}",
+                            "Specialist model execution bypassed",
+                        ],
+                    },
+                    task_route="rejected_query",
+                    processing_time_ms=0.0,
+                ),
+            )
+
+        # Check Inference Cache (STEP 5)
+        cached_response = inference_cache.get(
+            images=images,
+            canonical_intent=validation.intent,
+            canonical_target_or_prompt=validation.canonical_prompt,
+        )
+        if cached_response is not None:
+            cached_response.valid = True
+            cached_response.canonical_task = validation.canonical_task
+            cached_response.intent = validation.intent
+            if validation.target:
+                cached_response.target = validation.target
+            if validation.operation:
+                cached_response.operation = validation.operation
+            return cached_response
+
+        # Use canonical prompt if available for fixed tasks, otherwise clean query
+        effective_query = validation.canonical_prompt if validation.canonical_prompt else clean_query
+
         # 1. Build Structured Analysis Plan
         from app.agent.planner import build_analysis_plan, validate_plan_inputs
-        plan = build_analysis_plan(clean_query, image_count=image_count, metadata=meta)
+        plan = build_analysis_plan(effective_query, image_count=image_count, metadata=meta)
 
         # 2. Deterministic Routing Decision
         task, task_route, tasks_list = get_route_info(
-            query=clean_query,
+            query=effective_query,
             image_count=image_count,
             modalities=modalities,
             dates=dates,
@@ -88,7 +145,7 @@ class AgenticController:
                 lon = plan.longitude if plan.longitude is not None else 0.0
                 
                 start = time.time()
-                gee_intent, gee_result, explanation = gee_query_planner(clean_query, lat, lon)
+                gee_intent, gee_result, explanation = gee_query_planner(effective_query, lat, lon)
                 end = time.time()
                 
                 # Apply Result Interpreter Layer to GEE result
@@ -96,7 +153,7 @@ class AgenticController:
                 try:
                     gee_payload = gee_result if isinstance(gee_result, dict) else {"result": gee_result, "explanation": explanation}
                     interp = interpret_result(
-                        query=clean_query,
+                        query=effective_query,
                         task=gee_intent or "gee",
                         result=gee_payload,
                     )
@@ -106,8 +163,13 @@ class AgenticController:
                 except Exception:
                     final_gee_ans = explanation
 
-                return QueryResponse(
+                response = QueryResponse(
+                    valid=True,
                     task_detected="gee",
+                    canonical_task=validation.canonical_task,
+                    intent=validation.intent,
+                    target=validation.target,
+                    operation=validation.operation,
                     answer=final_gee_ans,
                     confidence=1.0,
                     visual_evidence=VisualEvidence(type="none"),
@@ -118,7 +180,8 @@ class AgenticController:
                             "lon": lon,
                             "gee_intent": gee_intent,
                             "execution_trace": [
-                                "Intent detected: gee",
+                                "Query validated and normalized successfully",
+                                f"Intent detected: {validation.intent}",
                                 "Executed Google Earth Engine query planner",
                                 "Result Interpretation executed successfully",
                                 "Result generated successfully",
@@ -129,19 +192,27 @@ class AgenticController:
                     )
                 )
 
+                inference_cache.put(
+                    images=images,
+                    canonical_intent=validation.intent,
+                    canonical_target_or_prompt=validation.canonical_prompt,
+                    response=response,
+                )
+                return response
+
             model_entry = registry.get_entry(single_task)
 
             log_request(
                 task=single_task,
                 model_name=model_entry.model_name,
-                query=clean_query,
+                query=effective_query,
                 image_count=image_count,
             )
 
             model_output = inference_service.run_inference(
                 task=single_task,
                 images=images,
-                query=clean_query,
+                query=effective_query,
                 metadata=meta,
             )
 
@@ -152,15 +223,33 @@ class AgenticController:
                 query=clean_query,
             )
 
+            # Populate normalization & schema fields
+            response.valid = True
+            response.canonical_task = validation.canonical_task
+            response.intent = validation.intent
+            if validation.target:
+                response.target = validation.target
+            if validation.operation:
+                response.operation = validation.operation
+
             # Enrich parameters with factual execution trace
             trace = [
-                f"Intent detected: {single_task}",
+                f"Query validated: intent={validation.intent}, canonical_task={validation.canonical_task}",
                 f"Loaded {image_count} satellite image(s)",
                 f"Executed specialist model '{model_output.get('model_name')}'",
                 "Result Interpretation executed successfully",
                 "Result generated successfully",
             ]
             response.execution_summary.parameters["execution_trace"] = trace
+
+            # Cache the assembled response
+            inference_cache.put(
+                images=images,
+                canonical_intent=validation.intent,
+                canonical_target_or_prompt=validation.canonical_prompt,
+                response=response,
+            )
+
             return response
 
         # --- Case B: Multi-Model Sequential Execution ---
@@ -268,8 +357,13 @@ class AgenticController:
             sub_results=sub_task_results,
         )
 
-        return QueryResponse(
+        multi_response = QueryResponse(
+            valid=True,
             task_detected="multi_model",
+            canonical_task="multi_model",
+            intent=validation.intent,
+            target=validation.target,
+            operation=validation.operation,
             answer=synthesized_answer,
             confidence=None,
             confidence_by_task=confidence_by_task,
@@ -278,6 +372,15 @@ class AgenticController:
             execution_summary=execution_summary,
             verification=verification,
         )
+
+        inference_cache.put(
+            images=images,
+            canonical_intent=validation.intent,
+            canonical_target_or_prompt=validation.canonical_prompt,
+            response=multi_response,
+        )
+
+        return multi_response
 
 
 # Singleton controller instance

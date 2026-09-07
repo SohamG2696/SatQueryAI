@@ -51,7 +51,7 @@ def run_module(
 
     pil_img = _to_pil_image(images[0])
     adapter = get_vlm_adapter()
-    res = adapter.predict(image=pil_img, question=query)
+    res = adapter.predict(image=pil_img, question=query, max_new_tokens=80)
 
     return {
         "answer": res["prediction"],

@@ -1,40 +1,69 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { SkipForward } from 'lucide-react';
 
 /**
- * IntroVideo — Full-screen cinematic intro that plays once per page load.
- *
- * Props:
- *   onFinish — called when video ends or user skips
+ * IntroVideo — Full-screen cinematic intro video with unmuted audio playing from start.
+ * No prompts, no mute/unmute buttons, directly plays audio with video.
  */
 function IntroVideo({ onFinish }) {
   const videoRef = useRef(null);
   const [fadingOut, setFadingOut] = useState(false);
 
-  // Trigger the fade-out → call onFinish
+  // Trigger the fade-out → transition to landing page
   const handleExit = useCallback(() => {
-    if (fadingOut) return; // prevent double-fire
+    if (fadingOut) return;
     setFadingOut(true);
     setTimeout(() => {
       onFinish();
-    }, 700); // matches CSS transition duration
+    }, 600);
   }, [fadingOut, onFinish]);
 
-  // Auto-transition when video ends
+  // Auto-transition when video finishes
   const handleEnded = useCallback(() => {
     handleExit();
   }, [handleExit]);
 
-  // Attempt autoplay (browsers require muted for autoplay)
   useEffect(() => {
     const vid = videoRef.current;
     if (!vid) return;
-    vid.muted = true;
-    const playPromise = vid.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        // Autoplay blocked — video stays paused; user can still click Skip
-      });
-    }
+
+    vid.volume = 1.0;
+    vid.playbackRate = 1.25;
+    vid.muted = false;
+
+    // Attempt direct unmuted playback
+    vid.play().catch(() => {
+      // Fallback to muted playback only if browser security prevents unmuted autoplay
+      vid.muted = true;
+      vid.playbackRate = 1.25;
+      vid.play().catch(() => {});
+    });
+
+    // Unmute on genuine user gesture (click, tap, keypress)
+    const handleGesture = () => {
+      if (vid && vid.muted) {
+        vid.muted = false;
+        vid.volume = 1.0;
+        vid.playbackRate = 1.25;
+      }
+      removeListeners();
+    };
+
+    const removeListeners = () => {
+      window.removeEventListener('pointerdown', handleGesture);
+      window.removeEventListener('click', handleGesture);
+      window.removeEventListener('keydown', handleGesture);
+      window.removeEventListener('touchstart', handleGesture);
+    };
+
+    window.addEventListener('pointerdown', handleGesture);
+    window.addEventListener('click', handleGesture);
+    window.addEventListener('keydown', handleGesture);
+    window.addEventListener('touchstart', handleGesture);
+
+    return () => {
+      removeListeners();
+    };
   }, []);
 
   return (
@@ -48,18 +77,22 @@ function IntroVideo({ onFinish }) {
         alignItems: 'center',
         justifyContent: 'center',
         opacity: fadingOut ? 0 : 1,
-        transition: 'opacity 0.7s ease',
+        transition: 'opacity 0.6s ease',
         pointerEvents: fadingOut ? 'none' : 'auto',
       }}
     >
-      {/* ── Cinematic intro video ── */}
+      {/* ── Cinematic intro video with audio ── */}
       <video
         ref={videoRef}
-        src="/Before Landing Page Final 1.mp4"
+        src="/Before%20Landing%20Page%20Final%201.mp4"
         autoPlay
-        muted
         playsInline
+        preload="auto"
+        onPlay={(e) => {
+          e.currentTarget.playbackRate = 1.25;
+        }}
         onEnded={handleEnded}
+        onError={handleExit}
         style={{
           position: 'absolute',
           inset: 0,
@@ -70,7 +103,7 @@ function IntroVideo({ onFinish }) {
         }}
       />
 
-      {/* ── Skip Intro button — top-right corner ── */}
+      {/* ── Skip Intro button ── */}
       <button
         onClick={handleExit}
         aria-label="Skip intro video"
@@ -81,47 +114,35 @@ function IntroVideo({ onFinish }) {
           zIndex: 10000,
           display: 'flex',
           alignItems: 'center',
-          gap: '0.4rem',
-          padding: '0.5rem 1.1rem',
-          background: 'rgba(3, 7, 13, 0.65)',
+          gap: '0.45rem',
+          padding: '0.55rem 1.25rem',
+          background: 'rgba(3, 7, 18, 0.75)',
           border: '1px solid rgba(97, 216, 255, 0.35)',
           borderRadius: '999px',
-          color: 'rgba(242, 247, 250, 0.85)',
-          fontSize: '0.75rem',
+          color: 'rgba(242, 247, 250, 0.9)',
+          fontSize: '0.78rem',
           fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
           fontWeight: 600,
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
-          backdropFilter: 'blur(8px)',
+          backdropFilter: 'blur(12px)',
           cursor: 'pointer',
-          transition: 'background 0.2s, border-color 0.2s, color 0.2s',
+          boxShadow: '0 0 20px rgba(0, 0, 0, 0.5)',
+          transition: 'all 0.2s ease',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(97, 216, 255, 0.15)';
-          e.currentTarget.style.borderColor = 'rgba(97, 216, 255, 0.7)';
-          e.currentTarget.style.color = '#61d8ff';
+          e.currentTarget.style.background = 'rgba(34, 211, 238, 0.2)';
+          e.currentTarget.style.borderColor = 'rgba(34, 211, 238, 0.8)';
+          e.currentTarget.style.color = '#22d3ee';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'rgba(3, 7, 13, 0.65)';
+          e.currentTarget.style.background = 'rgba(3, 7, 18, 0.75)';
           e.currentTarget.style.borderColor = 'rgba(97, 216, 255, 0.35)';
-          e.currentTarget.style.color = 'rgba(242, 247, 250, 0.85)';
+          e.currentTarget.style.color = 'rgba(242, 247, 250, 0.9)';
         }}
       >
-        Skip Intro
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="13 17 18 12 13 7" />
-          <polyline points="6 17 11 12 6 7" />
-        </svg>
+        <span>Skip Intro</span>
+        <SkipForward size={14} />
       </button>
     </div>
   );

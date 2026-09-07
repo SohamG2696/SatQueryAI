@@ -32,6 +32,11 @@ function MainAppContent() {
     }
   };
 
+  // If viewing intro video
+  if (viewMode === 'intro') {
+    return <IntroVideo onFinish={() => setViewMode('landing')} />;
+  }
+
   // If viewing analysis workspace / dashboard
   if (viewMode === 'dashboard') {
     return <Dashboard onBackToLanding={() => setViewMode('landing')} openAuthModal={openAuthModal} />;
@@ -44,11 +49,6 @@ function MainAppContent() {
 
   return (
     <>
-      {/* ── INTRO VIDEO — rendered on top until dismissed ── */}
-      {viewMode === 'intro' && (
-        <IntroVideo onFinish={() => setViewMode('landing')} />
-      )}
-
       {/* ── LANDING PAGE & EVERYTHING BELOW ── */}
       <div className="app">
 

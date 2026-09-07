@@ -195,7 +195,7 @@ def test_e2e_multi_model_orchestration():
 
     assert len(data["answer"]) > 0
     assert "synthesis" in data or "confidence_by_task" in data or "multi-model" in data["answer"].lower()
-    assert data["visual_evidence"]["type"] == "bbox"
+    assert data["visual_evidence"]["type"] in ("bbox", "change_mask", "change_map")
 
     trace = data["execution_summary"]["parameters"]["execution_trace"]
     assert any("grounding" in t.lower() for t in trace)

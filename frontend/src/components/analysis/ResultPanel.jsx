@@ -14,8 +14,26 @@ import {
   MapPin,
 } from "lucide-react";
 
-function ResultPanel({ analysisResult, isAnalyzing, currentStep }) {
+function ResultPanel({ analysisResult, isAnalyzing, currentStep, error }) {
   const [copied, setCopied] = useState(false);
+
+  // ERROR STATE
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-500/40 bg-[#070d18]/90 p-8 md:p-10 backdrop-blur-xl shadow-[0_0_30px_rgba(239,68,68,0.15)]">
+        <div className="flex items-center gap-3 text-red-400 mb-4">
+          <AlertTriangle className="h-6 w-6" />
+          <h3 className="text-lg font-bold text-white">Analysis Execution Error</h3>
+        </div>
+        <p className="text-sm text-slate-300 leading-relaxed bg-red-950/30 border border-red-500/20 rounded-xl p-4 font-mono">
+          {error}
+        </p>
+        <p className="mt-4 text-xs text-slate-400">
+          Please check that your backend server is running on <code className="text-cyan-300">http://127.0.0.1:8000</code>.
+        </p>
+      </div>
+    );
+  }
 
   const handleCopy = () => {
     if (!analysisResult) return;

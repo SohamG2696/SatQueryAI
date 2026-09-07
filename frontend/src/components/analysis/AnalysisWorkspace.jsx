@@ -43,18 +43,21 @@ export default function AnalysisWorkspace({ supabase, user }) {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(2) + "s";
       setExecutionTime(elapsed);
 
+      const task = response.task_detected || response.task || "vqa";
       const modelsUsed = response.execution_summary?.models_used || response.execution_summary?.models_invoked || [];
       const taskRoute = response.execution_summary?.task_route || response.execution_summary?.route_selected || "Standard Pipeline";
       const modelName = modelsUsed.length > 0
         ? modelsUsed.join(", ")
-        : taskRoute !== "Standard Pipeline" ? taskRoute : "SatQuery Controller";
+        : taskRoute !== "Standard Pipeline" ? taskRoute : "SatQuery Specialist Model";
 
       const keyFindings = [];
       if (response.synthesis?.key_findings?.length) {
         keyFindings.push(...response.synthesis.key_findings);
+      } else if (response.execution_summary?.parameters?.interpretation?.key_findings?.length) {
+        keyFindings.push(...response.execution_summary.parameters.interpretation.key_findings);
       } else {
         keyFindings.push(
-          `Task Identified: ${response.task_detected.toUpperCase()}`,
+          `Task Identified: ${task.toUpperCase()}`,
           `Route Invoked: ${taskRoute}`,
           `Processing Latency: ${response.execution_summary?.processing_time_ms ? `${response.execution_summary.processing_time_ms}ms` : (response.execution_summary?.processing_time_seconds || elapsed)}`
         );
@@ -62,21 +65,21 @@ export default function AnalysisWorkspace({ supabase, user }) {
 
       const result = {
         rawResponse: response,
-        sceneName: images[0]?.name || "Uploaded Satellite Imagery",
+        sceneName: images[0]?.name || images[0]?.file?.name || "Uploaded Satellite Imagery",
         imageCount: images.length,
         query: query.trim(),
-        task_detected: response.task_detected,
+        task_detected: task,
         model: modelName,
-        detectedObjects: response.task_detected === "grounding" ? "Localized Region" : response.task_detected.replace("_", " ").toUpperCase(),
+        detectedObjects: task === "grounding" ? "Localized Region" : task.replace("_", " ").toUpperCase(),
         objectType: taskRoute !== "Standard Pipeline" ? taskRoute : "Geospatial Target",
-        changesDetected: response.task_detected === "change_vqa" ? "Change Detection Applied" : "Single Scene Inspection",
+        changesDetected: task === "change_vqa" ? "Change Detection Applied" : "Single Scene Inspection",
         confidence: response.confidence != null ? `${Math.round(response.confidence * 100)}%` : "Not available",
-        message: response.answer,
+        message: response.answer || "Analysis complete.",
         keyFindings: keyFindings,
-        recommendation: response.verification?.notes || "Analysis generated and verified by SatQuery AI pipeline.",
+        recommendation: response.verification?.notes || response.execution_summary?.parameters?.interpretation?.summary || "Analysis verified by SatQuery AI pipeline.",
         visual_evidence: response.visual_evidence,
         spectralData: {
-          taskDetected: response.task_detected,
+          taskDetected: task,
           modelsInvoked: modelsUsed.join(", ") || "Active Module",
           routeSelected: taskRoute,
           imageCount: `${images.length} asset${images.length !== 1 ? "s" : ""}`,
@@ -103,6 +106,7 @@ export default function AnalysisWorkspace({ supabase, user }) {
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
     } catch (err) {
+      console.error("Analysis execution error:", err);
       setIsAnalyzing(false);
       setError(err.message || "Unable to connect to SatQuery AI backend. Please ensure the backend server is running on port 8000.");
     } finally {
@@ -220,6 +224,7 @@ export default function AnalysisWorkspace({ supabase, user }) {
               analysisResult={analysisResult}
               isAnalyzing={isAnalyzing}
               currentStep={currentStep}
+              error={error}
             />
           </div>
 

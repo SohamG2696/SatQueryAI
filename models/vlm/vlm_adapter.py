@@ -65,9 +65,10 @@ class VLMAdapter:
         self,
         image: Union[str, Path, Image.Image],
         question: str,
+        max_new_tokens: int = 100,
     ) -> dict[str, Any]:
         """
-        Run VQA inference given an image and a natural-language question.
+        Run deterministic VQA / Scene Description inference given an image and a natural-language question.
 
         Returns:
             dict with keys: question, raw_prediction, prediction, inference_time_s, model
@@ -95,6 +96,10 @@ class VLMAdapter:
         else:
             raise ValueError(f"Unsupported image type: {type(image)}. Expected PIL Image or file path.")
 
+        # Optimize resolution for fast CPU/GPU inference (SigLIP native tile: 384x384)
+        if pil_image.width > 384 or pil_image.height > 384:
+            pil_image = pil_image.resize((384, 384), Image.Resampling.LANCZOS)
+
         # Build prompt using chat template
         conversation = [
             {
@@ -110,16 +115,51 @@ class VLMAdapter:
         # Preprocess inputs
         inputs = self.processor(images=pil_image, text=prompt, return_tensors="pt").to(self.device)
 
+        # Resolve EOS and PAD tokens
+        eos_token_id = (
+            getattr(self.processor.tokenizer, "eos_token_id", None)
+            if hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None
+            else getattr(self.model.config, "eos_token_id", None)
+        )
+        pad_token_id = (
+            getattr(self.processor.tokenizer, "pad_token_id", None)
+            if hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None
+            else getattr(self.model.config, "pad_token_id", None)
+        )
+        if pad_token_id is None:
+            pad_token_id = eos_token_id
+
+        # Generation keyword arguments ensuring deterministic decoding and preventing loops
+        gen_kwargs: dict[str, Any] = {
+            "max_new_tokens": max(10, min(int(max_new_tokens), 200)),
+            "do_sample": False,
+            "repetition_penalty": 1.2,
+            "no_repeat_ngram_size": 3,
+        }
+        if eos_token_id is not None:
+            gen_kwargs["eos_token_id"] = eos_token_id
+        if pad_token_id is not None:
+            gen_kwargs["pad_token_id"] = pad_token_id
+
         # Run inference
         t0 = time.time()
         with torch.no_grad():
-            output_ids = self.model.generate(**inputs, max_new_tokens=50)
+            output_ids = self.model.generate(**inputs, **gen_kwargs)
         infer_duration = time.time() - t0
 
         # Decode response
         generated_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
         raw_prediction = self.processor.decode(generated_tokens, skip_special_tokens=True)
         prediction = raw_prediction.strip()
+
+        # Clean trailing duplicate phrases if any
+        sentences = [s.strip() for s in prediction.split(".") if s.strip()]
+        unique_sentences = []
+        for s in sentences:
+            if not unique_sentences or s != unique_sentences[-1]:
+                unique_sentences.append(s)
+        if unique_sentences and len(unique_sentences) < len(sentences):
+            prediction = ". ".join(unique_sentences) + "."
 
         return {
             "question": question_str,

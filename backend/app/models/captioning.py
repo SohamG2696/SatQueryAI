@@ -10,6 +10,11 @@ from typing import Any
 from app.models.vqa import _to_pil_image
 from models.vlm.vlm_adapter import get_vlm_adapter
 
+DEFAULT_SCENE_PROMPT = (
+    "Describe this satellite image in detail, including landscape features, "
+    "land cover, terrain, infrastructure, and geographical elements."
+)
+
 
 def run_module(
     images: list[Any],
@@ -20,11 +25,11 @@ def run_module(
     if not images:
         raise ValueError("Image Captioning requires at least one satellite image.")
 
-    q = query.strip() if query and query.strip() else "Describe this satellite image in detail."
+    q = query.strip() if query and query.strip() else DEFAULT_SCENE_PROMPT
 
     pil_img = _to_pil_image(images[0])
     adapter = get_vlm_adapter()
-    res = adapter.predict(image=pil_img, question=q)
+    res = adapter.predict(image=pil_img, question=q, max_new_tokens=120)
 
     return {
         "answer": res["prediction"],

@@ -15,13 +15,24 @@ from typing import Any, Dict, Optional, Tuple
 
 try:
     import ee
-    try:
-        ee.Initialize(project="satquery-ai-507618")
-    except Exception as e:
-        print(f"Warning: Failed to initialize Earth Engine: {e}")
 except ImportError:
     ee = None
-    print("Warning: earthengine-api ('ee') module not installed. GEE operations will use offline fallbacks.")
+
+_EE_INITIALIZED = False
+
+
+def _ensure_ee_initialized() -> bool:
+    """Lazily initialize Earth Engine on first GEE call."""
+    global _EE_INITIALIZED
+    if _EE_INITIALIZED or ee is None:
+        return _EE_INITIALIZED
+    try:
+        ee.Initialize(project="satquery-ai-507618")
+        _EE_INITIALIZED = True
+    except Exception as e:
+        print(f"Warning: Failed to initialize Earth Engine: {e}")
+        _EE_INITIALIZED = False
+    return _EE_INITIALIZED
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
