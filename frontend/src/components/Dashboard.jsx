@@ -26,7 +26,7 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
               </div>
 
               <button className="secondary-cta dash-landing-btn" onClick={onBackToLanding}>
-                Landing Page
+                Back
               </button>
 
               <button className="start-btn dash-logout-btn" onClick={signOut}>
@@ -36,7 +36,7 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
           ) : (
             <>
               <button className="secondary-cta dash-landing-btn" onClick={onBackToLanding}>
-                Landing Page
+                 Back
               </button>
 
               <button className="start-btn" onClick={() => openAuthModal && openAuthModal('login')}>
