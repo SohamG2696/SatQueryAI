@@ -10,11 +10,11 @@ Authentication: ee.Initialize(project="satquery-ai-507618")
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 try:
-    import ee
+    import ee  # type: ignore
 except ImportError:
     ee = None
 
@@ -50,7 +50,7 @@ def validate_dates(start_date: Optional[str], end_date: Optional[str]) -> Tuple[
     """
     if start_date is None and end_date is None:
         # Default: last 2 years
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return (now - timedelta(days=730)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
     if start_date is None or end_date is None:
