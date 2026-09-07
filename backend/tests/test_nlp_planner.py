@@ -423,3 +423,74 @@ def test_disambiguity_compare_optical_and_sar():
         image_count=2,
     )
     assert plan.primary_task == "fusion"
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 5. User Reported Verification Cases (TEST 1 - TEST 6)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def test_user_verification_test_1():
+    """TEST 1: 2 images, 'Have the areas of buildings changed?' -> change_vqa, bi_temporal_change, min_images=2."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan("Have the areas of buildings changed?", image_count=2)
+    assert plan.primary_task == "change_vqa"
+    assert plan.operation == "bi_temporal_change"
+    assert plan.min_images == 2
+
+    task, route = route_request("Have the areas of buildings changed?", image_count=2)
+    assert task == "change_vqa"
+    assert route == "bi_temporal_change_analysis"
+
+
+def test_user_verification_test_2():
+    """TEST 2: 2 images, 'What changed between the two images?' -> change_vqa."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan("What changed between the two images?", image_count=2)
+    assert plan.primary_task == "change_vqa"
+    task, route = route_request("What changed between the two images?", image_count=2)
+    assert task == "change_vqa"
+
+
+def test_user_verification_test_3():
+    """TEST 3: 2 images, 'Have the buildings changed between the two images?' -> change_vqa."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan("Have the buildings changed between the two images?", image_count=2)
+    assert plan.primary_task == "change_vqa"
+    task, route = route_request("Have the buildings changed between the two images?", image_count=2)
+    assert task == "change_vqa"
+
+
+def test_user_verification_test_4():
+    """TEST 4: 1 image, 'What types of land cover are visible in this satellite image?' -> vqa."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan("What types of land cover are visible in this satellite image?", image_count=1)
+    assert plan.primary_task == "vqa"
+    task, route = route_request("What types of land cover are visible in this satellite image?", image_count=1)
+    assert task == "vqa"
+
+
+def test_user_verification_test_5():
+    """TEST 5: 1 image, 'Locate the buildings in the image.' -> grounding."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan("Locate the buildings in the image.", image_count=1)
+    assert plan.primary_task == "grounding"
+    task, route = route_request("Locate the buildings in the image.", image_count=1)
+    assert task == "grounding"
+
+
+def test_user_verification_test_6():
+    """TEST 6: 2 images, Optical + SAR query -> fusion."""
+    from app.agent.router import route_request
+    plan = build_analysis_plan(
+        "Does this area contain built-up regions according to both optical and SAR imagery?",
+        image_count=2,
+        metadata={"modalities": ["optical", "sar"]}
+    )
+    assert plan.primary_task == "fusion"
+    task, route = route_request(
+        "Does this area contain built-up regions according to both optical and SAR imagery?",
+        image_count=2,
+        modalities=["optical", "sar"]
+    )
+    assert task == "fusion"

@@ -262,12 +262,26 @@ def build_analysis_plan(
     # OR explicit change intent in metadata.
     # RULE 7: Date words like "between June 1 and June 30" alone do NOT mean Change Detection!
     change_semantic_kw = (
-        "what changed", "changed between", "difference between", "has changed",
-        "detect change", "increased between", "decreased between", "urban expansion",
-        "deforestation", "growth between", "loss between", "before and after"
+        "what changed", "changed between", "difference between", "has changed", "have changed",
+        "detect change", "detect changes", "change detection", "increased between", "decreased between",
+        "urban expansion", "deforestation", "growth between", "loss between", "before and after",
+        "changes in", "change in", "area changed", "areas changed", "buildings changed",
+        "building changed", "vegetation changed"
     )
-    is_change_semantic = any(k in q_lower for k in change_semantic_kw) or (
-        "change" in q_lower and any(k in q_lower for k in ("between", "images", "dates", "before", "after"))
+    change_patterns = (
+        r"\b(have|has|did)\b.+\b(changed?|increased|decreased|grown|shrunk)\b",
+        r"\b(are|is)\s+there\s+.*\bchanges?\b",
+        r"\bchanges?\s+in\b",
+        r"\b(detect|show|identify|find|analyze)\s+.*\bchanges?\b",
+    )
+    has_change_pattern = any(re.search(pat, q_lower) for pat in change_patterns)
+
+    is_change_semantic = (
+        any(k in q_lower for k in change_semantic_kw)
+        or has_change_pattern
+        or (
+            "change" in q_lower and any(k in q_lower for k in ("between", "images", "dates", "before", "after"))
+        )
     )
 
     is_change_query = (

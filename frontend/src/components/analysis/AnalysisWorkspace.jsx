@@ -43,10 +43,11 @@ export default function AnalysisWorkspace({ supabase, user }) {
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(2) + "s";
       setExecutionTime(elapsed);
 
-      const modelsInvoked = response.execution_summary?.models_invoked || [];
-      const modelName = modelsInvoked.length > 0
-        ? modelsInvoked.join(", ")
-        : response.execution_summary?.route_selected || "SatQuery Controller";
+      const modelsUsed = response.execution_summary?.models_used || response.execution_summary?.models_invoked || [];
+      const taskRoute = response.execution_summary?.task_route || response.execution_summary?.route_selected || "Standard Pipeline";
+      const modelName = modelsUsed.length > 0
+        ? modelsUsed.join(", ")
+        : taskRoute !== "Standard Pipeline" ? taskRoute : "SatQuery Controller";
 
       const keyFindings = [];
       if (response.synthesis?.key_findings?.length) {
@@ -54,8 +55,8 @@ export default function AnalysisWorkspace({ supabase, user }) {
       } else {
         keyFindings.push(
           `Task Identified: ${response.task_detected.toUpperCase()}`,
-          `Route Invoked: ${response.execution_summary?.route_selected || "Standard Pipeline"}`,
-          `Processing Latency: ${response.execution_summary?.processing_time_seconds || elapsed}`
+          `Route Invoked: ${taskRoute}`,
+          `Processing Latency: ${response.execution_summary?.processing_time_ms ? `${response.execution_summary.processing_time_ms}ms` : (response.execution_summary?.processing_time_seconds || elapsed)}`
         );
       }
 
@@ -67,7 +68,7 @@ export default function AnalysisWorkspace({ supabase, user }) {
         task_detected: response.task_detected,
         model: modelName,
         detectedObjects: response.task_detected === "grounding" ? "Localized Region" : response.task_detected.replace("_", " ").toUpperCase(),
-        objectType: response.execution_summary?.route_selected || "Geospatial Target",
+        objectType: taskRoute !== "Standard Pipeline" ? taskRoute : "Geospatial Target",
         changesDetected: response.task_detected === "change_vqa" ? "Change Detection Applied" : "Single Scene Inspection",
         confidence: response.confidence != null ? `${Math.round(response.confidence * 100)}%` : "Not available",
         message: response.answer,
@@ -76,8 +77,8 @@ export default function AnalysisWorkspace({ supabase, user }) {
         visual_evidence: response.visual_evidence,
         spectralData: {
           taskDetected: response.task_detected,
-          modelsInvoked: modelsInvoked.join(", ") || "Active Module",
-          routeSelected: response.execution_summary?.route_selected || "Standard",
+          modelsInvoked: modelsUsed.join(", ") || "Active Module",
+          routeSelected: taskRoute,
           imageCount: `${images.length} asset${images.length !== 1 ? "s" : ""}`,
         },
       };

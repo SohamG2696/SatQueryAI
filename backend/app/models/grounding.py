@@ -101,5 +101,11 @@ def run_module(
             "query": query,
             "normalized_query": result.get("normalized_query"),
             "coordinate_system": "normalized",
+            "requested_target": result.get("requested_target"),
+            "model_target": result.get("model_target"),
+            "semantic_fallback": result.get("semantic_fallback"),
+            "fallback_reason": result.get("fallback_reason"),
+            "warning": result.get("warning"),
+            "confidence_type": result.get("confidence_type"),
         },
     }
