@@ -13,8 +13,15 @@ eggs/
 venv/
 env/
 .venv/
+# Environments & Secrets
 .env
+.env.*
+.env.local
+*.env
 backend/.env
+frontend/.env
+!.env.example
+!*.env.example
 
 # IDE
 .vscode/
