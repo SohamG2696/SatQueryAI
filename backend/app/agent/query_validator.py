@@ -630,6 +630,17 @@ def evaluate_domain_guardrail(
             task_detected="change_analysis",
         )
 
+    # Future Prediction / Land-Cover Forecasting
+    if any(k in q_lower for k in ("predict future", "future land-cover", "future land cover", "predict land cover", "predict land-cover", "forecasting", "future changes", "future change", "predict 20", "forecast 20", "prediction for 20", "future prediction", "forecast", "predict")):
+        return DomainGuardrailResult(
+            domain_valid=True,
+            domain="remote_sensing",
+            domain_confidence=0.96,
+            reason=None,
+            status=GuardrailStatus.VALID,
+            task_detected="future_prediction",
+        )
+
     # Optical-SAR Fusion Compatibility
     fusion_keywords = (
         "optical and sar", "sar and optical", "both modalities", "cross-modal",
