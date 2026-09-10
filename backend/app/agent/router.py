@@ -26,6 +26,9 @@ def get_route_info(
     primary = plan.primary_task
     sub_tasks = getattr(plan, "sub_tasks", [primary])
 
+    if primary == "future_prediction":
+        return "future_prediction", "multi_year_future_landcover_prediction", ["future_prediction"]
+
     if primary == "gee":
         return "gee", "google_earth_engine_fetch", ["gee"]
 

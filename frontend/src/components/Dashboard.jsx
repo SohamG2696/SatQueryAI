@@ -49,7 +49,7 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
 
       {/* Main Integrated Analysis Workspace */}
       <main className="flex-1">
-        <AnalysisWorkspace supabase={supabase} user={user} />
+        <AnalysisWorkspace supabase={supabase} user={user} openAuthModal={openAuthModal} />
       </main>
     </div>
   );

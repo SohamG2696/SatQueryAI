@@ -11,6 +11,7 @@ from .change import router as change_router
 from .fusion import router as fusion_router
 from .agent import router as agent_router
 from .gee import router as gee_router
+from .prediction import router as prediction_router
 
 all_routers = [
     query_router,
@@ -24,6 +25,7 @@ all_routers = [
     change_router,
     fusion_router,
     gee_router,
+    prediction_router,
 ]
 
 __all__ = [
@@ -38,5 +40,6 @@ __all__ = [
     "change_router",
     "fusion_router",
     "gee_router",
+    "prediction_router",
     "all_routers",
 ]

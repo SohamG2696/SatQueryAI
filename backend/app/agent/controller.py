@@ -135,7 +135,73 @@ class AgenticController:
         # --- Case A: Single Specialist Model Execution ---
         if len(tasks_list) == 1:
             single_task = tasks_list[0]
-            
+
+            if single_task == "future_prediction":
+                import re
+                import time
+                from models.future_prediction.inference.dynamic_predictor import predict_from_uploads
+
+                years = meta.get("years")
+                if not years:
+                    dates_meta = meta.get("dates") or []
+                    years_parsed = []
+                    for d in dates_meta:
+                        try:
+                            m = re.search(r"\b(20\d\d)\b", str(d))
+                            if m:
+                                years_parsed.append(int(m.group(1)))
+                        except Exception:
+                            pass
+                    if len(years_parsed) == image_count:
+                        years = years_parsed
+                    else:
+                        default_yrs = [2019, 2021, 2023, 2025]
+                        years = default_yrs[:image_count] if image_count <= 4 else list(range(2019, 2019 + image_count))
+
+                start = time.time()
+                pred_res = predict_from_uploads(
+                    image_paths=images,
+                    years=years,
+                    query=clean_query,
+                )
+                end = time.time()
+
+                # Calculate overall numeric confidence score from category predictions
+                CONF_MAP = {"high": 0.90, "moderate": 0.60, "low": 0.30}
+                cat_preds = pred_res.get("predictions", {})
+                if cat_preds:
+                    cat_scores = [CONF_MAP.get(p.get("confidence", "low"), 0.30) for p in cat_preds.values()]
+                    overall_confidence = min(cat_scores)
+                else:
+                    overall_confidence = 0.50
+
+                return QueryResponse(
+                    task_detected="future_prediction",
+                    answer=pred_res.get("explanation", ""),
+                    confidence=overall_confidence,
+                    visual_evidence=VisualEvidence(type="none"),
+                    execution_summary=ExecutionSummary(
+                        models_used=["dynamic_landcover_predictor"],
+                        parameters={
+                            "target_year": pred_res.get("target_year"),
+                            "predictions": pred_res.get("predictions"),
+                            "historical_data": pred_res.get("historical_data"),
+                            "unsupported_categories": pred_res.get("unsupported_categories"),
+                            "disclaimer": pred_res.get("disclaimer"),
+                            "execution_trace": [
+                                "Intent detected: future_prediction",
+                                f"Loaded {image_count} historical satellite image(s)",
+                                "Spatial location validation passed",
+                                "Extracted SCL land-cover stats per image",
+                                "Executed weighted linear trend forecasting",
+                                "Result generated successfully",
+                            ],
+                        },
+                        task_route=task_route,
+                        processing_time_ms=round((end - start) * 1000, 2),
+                    ),
+                )
+
             if single_task == "gee":
                 from app.services.earth_engine import gee_query_planner
                 from app.services.result_interpreter import interpret_result

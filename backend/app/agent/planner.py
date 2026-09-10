@@ -205,6 +205,15 @@ def build_analysis_plan(
     cloud = extract_cloud(query) or meta.get("cloud_percentage")
     pol, orb, mode = extract_sar_params(query)
 
+    # 0. Detect Future Prediction Intent
+    is_future_pred = False
+    try:
+        from models.future_prediction.inference.query_parser import parse_prediction_query
+        pq = parse_prediction_query(query)
+        is_future_pred = pq.get("is_prediction_query", False)
+    except Exception:
+        is_future_pred = False
+
     # 1. Detect GEE Intent
     # Keywords indicating GEE dataset retrieval, index computation, elevation
     gee_dataset_kw = (
@@ -253,14 +262,10 @@ def build_analysis_plan(
             gee_dataset = "COPERNICUS/S2_SR_HARMONIZED"
 
         # Check if this GEE query is a standalone data/index request (no uploaded images or explicit request to fetch)
-        # e.g., "Find a Sentinel-2 image between June 1 and June 30", "Calculate NDVI at lat 19.076", "What is the elevation?"
         if image_count == 0 or any(k in q_lower for k in ("fetch", "get", "find a sentinel", "find sentinel", "calculate", "what is the elevation", "for this location")):
             is_gee_query = True
 
     # 2. Detect Change Detection Intent (Bi-temporal comparison)
-    # Must have semantic change/comparison keywords ("what changed", "difference between", "changed between", "has vegetation increased/decreased")
-    # OR explicit change intent in metadata.
-    # RULE 7: Date words like "between June 1 and June 30" alone do NOT mean Change Detection!
     change_semantic_kw = (
         "what changed", "changed between", "difference between", "has changed", "have changed",
         "detect change", "detect changes", "change detection", "increased between", "decreased between",
@@ -286,11 +291,9 @@ def build_analysis_plan(
 
     is_change_query = (
         is_change_semantic or has_diff_dates
-    ) and not is_gee_query
+    ) and not is_gee_query and not is_future_pred
 
     # 3. Detect Optical-SAR Fusion Intent
-    # Requires explicit optical+SAR joint analysis keywords OR (has_optical and has_sar)
-    # RULE 8: Mentioning "sentinel-1" or "sentinel-2" alone does NOT mean Fusion!
     fusion_explicit_kw = (
         "optical and sar", "sar and optical", "both modalities", "cross-modal",
         "fuse optical", "fusion model", "confirm using both", "support optical"
@@ -298,19 +301,18 @@ def build_analysis_plan(
     is_fusion_explicit = any(k in q_lower for k in fusion_explicit_kw)
     is_fusion_query = (
         (has_optical and has_sar) or is_fusion_explicit
-    ) and not is_gee_query
+    ) and not is_gee_query and not is_future_pred
 
-    # 4. Detect Grounding Intent (Spatial localization in an uploaded image)
-    # RULE 9: "find" / "show" / "locate" alone do NOT mean Grounding when asking for GEE dataset retrieval.
+    # 4. Detect Grounding Intent
     grounding_kw = (
         "find the", "locate the", "show where", "bounding box", "bbox",
         "where are the", "where is the", "segment", "highlight the", "locate"
     )
-    is_grounding_query = any(k in q_lower for k in grounding_kw) and not is_gee_query
+    is_grounding_query = any(k in q_lower for k in grounding_kw) and not is_gee_query and not is_future_pred
 
     # 5. Detect Captioning Intent
     caption_kw = ("describe", "caption", "summarize", "overview", "what is in this image")
-    is_caption_query = (not q_lower or any(k in q_lower for k in caption_kw)) and not (is_grounding_query or is_change_query or is_fusion_query or is_gee_query)
+    is_caption_query = (not q_lower or any(k in q_lower for k in caption_kw)) and not (is_grounding_query or is_change_query or is_fusion_query or is_gee_query or is_future_pred)
 
     # 6. Detect DL + GEE Combined Intent
     geospatial_evidence_kw = (
@@ -322,6 +324,8 @@ def build_analysis_plan(
     # 7. Assemble Sub-tasks and Primary Task
     sub_tasks: List[str] = []
 
+    if is_future_pred:
+        sub_tasks.append("future_prediction")
     if is_gee_query:
         sub_tasks.append("gee")
     if is_grounding_query:
@@ -350,6 +354,7 @@ def build_analysis_plan(
     else:
         primary_task = sub_tasks[0]
         op_map = {
+            "future_prediction": "multi_year_landcover_forecasting",
             "gee": gee_operation,
             "grounding": "spatial_grounding",
             "change_vqa": "bi_temporal_change",
@@ -365,7 +370,10 @@ def build_analysis_plan(
     required_modalities: List[str] = []
     requires_location = False
 
-    if primary_task == "gee":
+    if primary_task == "future_prediction":
+        requires_uploaded_images = True
+        min_images = 2
+    elif primary_task == "gee":
         requires_uploaded_images = False
         min_images = 0
         requires_location = True
@@ -440,7 +448,9 @@ def validate_plan_inputs(
     # 2. Uploaded Image Count Validation
     if plan.requires_uploaded_images and image_count < plan.min_images:
         task = plan.primary_task
-        if task in ("vqa", "captioning", "question"):
+        if task == "future_prediction":
+            raise ValueError("Multi-year land-cover future forecasting requires at least 2 historical satellite images.")
+        elif task in ("vqa", "captioning", "question"):
             raise ValueError("This query requires one satellite image.")
         elif task == "grounding":
             raise ValueError("Spatial grounding requires one satellite image.")

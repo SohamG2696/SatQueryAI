@@ -3,12 +3,16 @@ import ImageUploader from "./ImageUploader";
 import QueryBox from "./QueryBox";
 import ResultPanel from "./ResultPanel";
 import ExecutionSummary from "./ExecutionSummary";
+import HistoryPanel from "./HistoryPanel";
 import Spotlight from "./Spotlight";
-import { Globe2, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
+import FuturePrediction from "../FuturePrediction";
+import DynamicFuturePrediction from "../DynamicFuturePrediction";
+import { History, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
 import { executeQuery } from "@/services/api";
+import { saveQueryHistory } from "@/services/history";
 import "@/styles/analysis.css";
 
-export default function AnalysisWorkspace({ supabase, user }) {
+export default function AnalysisWorkspace({ supabase, user, openAuthModal }) {
   const [images, setImages] = useState([]);           // multi-image array
   const [query, setQuery] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -16,6 +20,8 @@ export default function AnalysisWorkspace({ supabase, user }) {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [executionTime, setExecutionTime] = useState(null);
   const [error, setError] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [forecasterTab, setForecasterTab] = useState("preset");
 
   const resultsRef = useRef(null);
 
@@ -89,17 +95,18 @@ export default function AnalysisWorkspace({ supabase, user }) {
       setAnalysisResult(result);
       setIsAnalyzing(false);
 
+      // Save to Supabase query history + storage
       if (supabase && user?.id) {
-        try {
-          await supabase.from("analyses").insert({
-            user_id: user.id,
-            query: query || "Satellite Scene Inspection",
-            ai_response: result.message,
-            created_at: new Date().toISOString(),
-          });
-        } catch (dbErr) {
-          console.warn("Supabase analyses table insert note:", dbErr.message);
-        }
+        saveQueryHistory({
+          supabase,
+          user,
+          query,
+          images,
+          response,
+          analysisResult: result,
+        }).catch((err) => {
+          console.warn("Background history save note:", err);
+        });
       }
 
       setTimeout(() => {
@@ -114,6 +121,67 @@ export default function AnalysisWorkspace({ supabase, user }) {
       clearTimeout(t2);
       clearTimeout(t3);
     }
+  };
+
+  const handleRestoreHistoryItem = (item, restoredImages) => {
+    if (item.query) {
+      setQuery(item.query);
+    }
+    if (restoredImages && restoredImages.length > 0) {
+      setImages(restoredImages);
+    }
+
+    const savedRawResult = item.execution_summary?.raw_result || null;
+    const savedRawResponse = item.execution_summary?.raw_response || null;
+
+    const taskDetected = item.task_detected || savedRawResult?.task_detected || "vqa";
+    const modelName = item.model_used || savedRawResult?.model || item.execution_summary?.models_used?.join(", ") || "SatQuery Controller";
+    const taskRoute = item.execution_summary?.task_route || item.execution_summary?.route_selected || savedRawResult?.objectType || (taskDetected === "change_vqa" ? "bi_temporal_change_analysis" : "Standard Pipeline");
+
+    const restoredSceneName = restoredImages?.[0]?.name || savedRawResult?.sceneName || "Restored Satellite Scene";
+    const restoredImageCount = restoredImages?.length || savedRawResult?.imageCount || item.images?.length || 0;
+
+    let keyFindings = savedRawResult?.keyFindings || [];
+    if (!keyFindings || keyFindings.length === 0) {
+      if (savedRawResponse?.synthesis?.key_findings?.length) {
+        keyFindings = savedRawResponse.synthesis.key_findings;
+      } else {
+        keyFindings = [
+          `Task Identified: ${taskDetected.toUpperCase()}`,
+          `Route Invoked: ${taskRoute}`,
+          `Model Engine: ${modelName}`,
+        ];
+      }
+    }
+
+    const restoredResult = {
+      rawResponse: savedRawResponse || item.execution_summary || null,
+      sceneName: restoredSceneName,
+      imageCount: restoredImageCount,
+      query: item.query || savedRawResult?.query || "",
+      task_detected: taskDetected,
+      model: modelName,
+      detectedObjects: savedRawResult?.detectedObjects || (taskDetected === "grounding" ? "Localized Region" : taskDetected.replace("_", " ").toUpperCase()),
+      objectType: taskRoute !== "Standard Pipeline" ? taskRoute : (savedRawResult?.objectType || "Geospatial Target"),
+      changesDetected: savedRawResult?.changesDetected || (taskDetected === "change_vqa" ? "Change Detection Applied" : "Single Scene Inspection"),
+      confidence: item.confidence || savedRawResult?.confidence || (savedRawResponse?.confidence != null ? `${Math.round(savedRawResponse.confidence * 100)}%` : "Validated"),
+      message: item.answer || savedRawResult?.message || "",
+      keyFindings: keyFindings,
+      recommendation: savedRawResult?.recommendation || savedRawResponse?.verification?.notes || "Analysis restored from persistent user history.",
+      visual_evidence: item.visual_evidence || savedRawResult?.visual_evidence || savedRawResponse?.visual_evidence || null,
+      spectralData: savedRawResult?.spectralData || {
+        taskDetected: taskDetected,
+        modelsInvoked: modelName,
+        routeSelected: taskRoute,
+        imageCount: `${restoredImageCount} asset${restoredImageCount !== 1 ? "s" : ""}`,
+      },
+    };
+
+    setAnalysisResult(restoredResult);
+
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   };
 
   return (
@@ -167,9 +235,15 @@ export default function AnalysisWorkspace({ supabase, user }) {
                       Upload your satellite imagery — 5 images minimum for multi-temporal analysis.
                     </p>
                   </div>
-                  <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-2 text-cyan-400">
-                    <Globe2 className="h-5 w-5" />
-                  </div>
+                  {/* HISTORY ICON BUTTON REPLACING GLOBE2 */}
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoryOpen(true)}
+                    title="Open Persistent Query History"
+                    className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-2.5 text-cyan-300 hover:bg-cyan-400/20 hover:border-cyan-400 hover:scale-105 transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
+                  >
+                    <History className="h-5 w-5" />
+                  </button>
                 </div>
 
                 <ImageUploader
@@ -237,6 +311,49 @@ export default function AnalysisWorkspace({ supabase, user }) {
               images={images}
             />
           </div>
+
+          {/* ================= FUTURE LAND-COVER FORECASTING ================= */}
+          <div className="mt-12">
+            <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1 w-full">
+                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-cyan-400/50" />
+                <span className="text-xs font-semibold tracking-[0.3em] text-cyan-300">
+                  MULTI-YEAR LAND-COVER FORECASTING
+                </span>
+                <div className="h-px flex-1 bg-gradient-to-l from-transparent via-violet-400/30 to-violet-400/50" />
+              </div>
+
+              {/* Mode Switcher Tabs */}
+              <div className="flex items-center bg-slate-900/90 border border-slate-800 p-1 rounded-xl text-xs">
+                <button
+                  onClick={() => setForecasterTab("preset")}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                    forecasterTab === "preset"
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-inner"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Preset Demo Regions
+                </button>
+                <button
+                  onClick={() => setForecasterTab("dynamic")}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                    forecasterTab === "dynamic"
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-inner"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Upload Custom Timeline
+                </button>
+              </div>
+            </div>
+
+            {forecasterTab === "preset" ? (
+              <FuturePrediction defaultRegion="region_01" defaultYear={2027} />
+            ) : (
+              <DynamicFuturePrediction />
+            )}
+          </div>
         </section>
 
         {/* ================= FOOTER ================= */}
@@ -260,6 +377,16 @@ export default function AnalysisWorkspace({ supabase, user }) {
           </div>
         </footer>
       </div>
+
+      {/* PERSISTENT QUERY HISTORY SLIDE-OVER PANEL */}
+      <HistoryPanel
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        user={user}
+        supabase={supabase}
+        onRestoreItem={handleRestoreHistoryItem}
+        openAuthModal={openAuthModal}
+      />
     </div>
   );
 }

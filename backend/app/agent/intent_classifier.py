@@ -100,6 +100,15 @@ def detect_all_intents(query: str | None) -> List[str]:
     q = query.strip()
     detected: List[str] = []
 
+    # Check for Future Prediction
+    try:
+        from models.future_prediction.inference.query_parser import parse_prediction_query
+        pq = parse_prediction_query(q)
+        if pq.get("is_prediction_query"):
+            detected.append("future_prediction")
+    except Exception:
+        pass
+
     # Check for Grounding
     if contains_keyword(q, _GROUNDING_KEYWORDS):
         detected.append("grounding")
@@ -129,12 +138,15 @@ def classify_query_intent(query: str | None) -> str:
     Returns
     -------
     str
-        One of: 'grounding', 'captioning', 'change', 'fusion', 'question', 'multi_model', 'empty'
+        One of: 'future_prediction', 'grounding', 'captioning', 'change', 'fusion', 'question', 'multi_model', 'empty'
     """
     intents = detect_all_intents(query)
     if not intents:
         return "empty"
     if len(intents) > 1:
+        # If future_prediction is present alongside another, prioritize future_prediction
+        if "future_prediction" in intents and len(intents) == 2:
+            return "future_prediction"
         return "multi_model"
     first = intents[0]
     if first == "change_vqa":
