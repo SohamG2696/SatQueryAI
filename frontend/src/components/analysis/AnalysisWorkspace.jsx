@@ -3,15 +3,11 @@ import ImageUploader from "./ImageUploader";
 import QueryBox from "./QueryBox";
 import ResultPanel from "./ResultPanel";
 import ExecutionSummary from "./ExecutionSummary";
-<<<<<<< Updated upstream
 import HistoryPanel from "./HistoryPanel";
 import Spotlight from "./Spotlight";
 import FuturePrediction from "../FuturePrediction";
 import DynamicFuturePrediction from "../DynamicFuturePrediction";
-import { History, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
-=======
-import { Globe2, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
->>>>>>> Stashed changes
+import { History, Globe2, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
 import { executeQuery } from "@/services/api";
 import { saveQueryHistory } from "@/services/history";
 import "@/styles/analysis.css";
