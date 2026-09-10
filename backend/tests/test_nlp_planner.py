@@ -340,6 +340,7 @@ def test_error_grounding_no_image():
 
 
 def test_error_change_one_image():
+    """Single image + change query → NEEDS_CLARIFICATION (HTTP 200, valid=False)."""
     img1 = _create_test_image_bytes()
     response = client.post(
         "/api/query",
@@ -349,11 +350,17 @@ def test_error_change_one_image():
             "metadata": json.dumps({"dates": ["2022-01-01", "2025-01-01"]}),
         },
     )
-    assert response.status_code == 400
-    assert "requires two satellite images" in response.json()["detail"].lower()
+    # Controller returns a structured needs_clarification response (HTTP 200)
+    # rather than raising HTTP 400, so the endpoint returns 200.
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+    assert data["task_detected"] == "change_analysis"
+    assert "required" in (data.get("reason") or "").lower()
 
 
 def test_error_fusion_missing_modalities():
+    """Single optical image + optical-SAR fusion query → NEEDS_CLARIFICATION (HTTP 200)."""
     img1 = _create_test_image_bytes()
     response = client.post(
         "/api/query",
@@ -363,8 +370,11 @@ def test_error_fusion_missing_modalities():
             "metadata": json.dumps({"modalities": ["optical"]}),
         },
     )
-    assert response.status_code == 400
-    assert "fusion requires" in response.json()["detail"].lower() or "requires two satellite images" in response.json()["detail"].lower()
+    # Controller returns needs_clarification (HTTP 200, valid=False) instead of HTTP 400.
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+    assert data.get("reason") is not None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

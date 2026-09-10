@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import AnalysisWorkspace from './analysis/AnalysisWorkspace';
+import ScrollBackgroundVideo from './ScrollBackgroundVideo';
 
 export default function Dashboard({ onBackToLanding, openAuthModal }) {
   const { user, profile, signOut } = useAuth();
@@ -9,7 +10,14 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Researcher';
 
   return (
-    <div className="dashboard-page flex flex-col min-h-screen bg-[#030712]">
+    <div className="dashboard-page flex flex-col min-h-screen bg-transparent relative">
+      {/* Global Scroll-Driven Background Video */}
+      <ScrollBackgroundVideo
+        src="/video/background_video.mp4"
+        fallbackSrc="/background_video.mp4"
+        overlayOpacity={0.35}
+      />
+
       {/* Dashboard Top Header Navigation */}
       <header className="dashboard-nav z-50">
         <div className="logo" onClick={onBackToLanding} style={{ cursor: 'pointer' }}>

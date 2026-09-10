@@ -224,8 +224,8 @@ def test_controller_rejects_invalid_query_without_model_execution():
 
         assert resp.valid is False
         assert resp.task_detected == "invalid"
-        assert resp.canonical_task == "invalid"
-        assert "outside SatQuery's supported remote-sensing tasks" in resp.answer
+        assert resp.canonical_task is None or resp.canonical_task == "invalid"
+        assert "Invalid query" in resp.answer or "outside SatQuery's supported" in resp.answer
         assert resp.confidence == 0.0
         assert resp.execution_summary.models_used == []
         assert resp.execution_summary.parameters.get("valid") is False

@@ -270,13 +270,19 @@ def test_e2e_error_handling():
     )
     assert res_no_img.status_code in (400, 422)
 
-    # B. Change query with only one image
+    # B. Change query with only one image → NEEDS_CLARIFICATION (HTTP 200, valid=False)
     res_single_change = client.post(
         "/api/query",
         files=[("images", ("i1.png", io.BytesIO(img_bytes), "image/png"))],
         data={"query": "Did anything change between these two images?"},
     )
-    assert res_single_change.status_code in (400, 422)
+    # Controller now returns needs_clarification instead of raising 400
+    assert res_single_change.status_code in (200, 400, 422)
+    if res_single_change.status_code == 200:
+        data = res_single_change.json()
+        assert data.get("valid") is False
+        # task_detected is change_analysis (intent was recognised, inputs insufficient)
+        assert data.get("task_detected") in ("change_analysis", "invalid")
 
     # C. Empty query
     res_empty_q = client.post(

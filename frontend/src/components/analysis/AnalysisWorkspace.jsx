@@ -3,11 +3,15 @@ import ImageUploader from "./ImageUploader";
 import QueryBox from "./QueryBox";
 import ResultPanel from "./ResultPanel";
 import ExecutionSummary from "./ExecutionSummary";
+<<<<<<< Updated upstream
 import HistoryPanel from "./HistoryPanel";
 import Spotlight from "./Spotlight";
 import FuturePrediction from "../FuturePrediction";
 import DynamicFuturePrediction from "../DynamicFuturePrediction";
 import { History, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
+=======
+import { Globe2, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
+>>>>>>> Stashed changes
 import { executeQuery } from "@/services/api";
 import { saveQueryHistory } from "@/services/history";
 import "@/styles/analysis.css";
@@ -186,16 +190,6 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal }) {
 
   return (
     <div className="analysis-workspace-root font-sans">
-      {/* PREMIUM BACKGROUND GLOWS */}
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_right,_rgba(6,182,212,0.12),transparent_40%),radial-gradient(circle_at_bottom_left,_rgba(139,92,246,0.10),transparent_45%)]" />
-
-      {/* SPOTLIGHT COMPONENT */}
-      <Spotlight
-        className="-top-40 left-0 md:-top-20 md:left-40"
-        duration={8}
-        xOffset={120}
-      />
-
       <div className="relative z-10">
         {/* ================= HERO SUB-HEADER ================= */}
         <section className="mx-auto max-w-7xl px-6 pb-6 pt-6 text-center md:px-10 md:pt-8">

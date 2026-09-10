@@ -32,7 +32,7 @@
 /* Isolated Analysis Workspace Wrapper */
 .analysis-workspace-root {
   min-height: 100vh;
-  background-color: #030712;
+  background-color: transparent;
   color: #ffffff;
   position: relative;
   overflow-x: hidden;

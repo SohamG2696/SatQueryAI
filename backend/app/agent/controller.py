@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from app.agent.model_registry import registry
-from app.agent.query_validator import validate_query_intent
+from app.agent.query_validator import GuardrailStatus, validate_query_intent
 from app.agent.router import get_route_info
 from app.schemas.execution import ExecutionSummary, VisualEvidence
 from app.schemas.response import QueryResponse
@@ -66,16 +66,48 @@ class AgenticController:
             metadata=meta,
         )
 
-        # Early Rejection for Out-of-Domain / Invalid queries — ZERO model execution
+        # Early Rejection — ZERO model execution for both INVALID and NEEDS_CLARIFICATION.
         if not validation.valid:
-            rejection_reason = validation.reason or "This query is outside SatQuery's supported remote-sensing tasks."
+            if validation.status == GuardrailStatus.NEEDS_CLARIFICATION:
+                # Intent was recognised but required inputs are missing.
+                # Return a helpful clarification message without running any model.
+                clarification_reason = validation.reason or "Two compatible images are required for change analysis."
+                return QueryResponse(
+                    valid=False,
+                    task_detected=validation.intent,
+                    canonical_task=None,
+                    intent=validation.intent,
+                    reason=clarification_reason,
+                    answer=f"Clarification needed: {clarification_reason}",
+                    confidence=0.0,
+                    visual_evidence=VisualEvidence(type="none"),
+                    execution_summary=ExecutionSummary(
+                        models_used=[],
+                        parameters={
+                            "valid": False,
+                            "status": validation.status,
+                            "reason": clarification_reason,
+                            "original_query": clean_query,
+                            "execution_trace": [
+                                "Domain guardrail evaluated query",
+                                f"Needs clarification: {clarification_reason}",
+                                "Specialist model execution bypassed",
+                            ],
+                        },
+                        task_route="needs_clarification",
+                        processing_time_ms=0.0,
+                    ),
+                )
+
+            # INVALID — genuine out-of-domain rejection
+            rejection_reason = validation.reason or "The query is outside SatQuery's supported remote-sensing analysis domain."
             return QueryResponse(
                 valid=False,
                 task_detected="invalid",
-                canonical_task="invalid",
+                canonical_task=None,
                 intent="invalid",
                 reason=rejection_reason,
-                answer="This query is outside SatQuery's supported remote-sensing tasks.",
+                answer="Invalid query. Please ask a question related to the uploaded remote-sensing imagery.",
                 confidence=0.0,
                 visual_evidence=VisualEvidence(type="none"),
                 execution_summary=ExecutionSummary(
@@ -85,7 +117,7 @@ class AgenticController:
                         "reason": rejection_reason,
                         "original_query": clean_query,
                         "execution_trace": [
-                            "Query validation layer evaluated query",
+                            "Domain guardrail evaluated query",
                             f"Query rejected: {rejection_reason}",
                             "Specialist model execution bypassed",
                         ],
