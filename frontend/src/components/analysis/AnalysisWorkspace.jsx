@@ -5,14 +5,12 @@ import ResultPanel from "./ResultPanel";
 import ExecutionSummary from "./ExecutionSummary";
 import HistoryPanel from "./HistoryPanel";
 import Spotlight from "./Spotlight";
-import FuturePrediction from "../FuturePrediction";
-import DynamicFuturePrediction from "../DynamicFuturePrediction";
-import { History, Globe2, ShieldCheck, Terminal, AlertCircle } from "lucide-react";
+import { History, Globe2, ShieldCheck, Terminal, AlertCircle, TrendingUp, ArrowRight } from "lucide-react";
 import { executeQuery } from "@/services/api";
 import { saveQueryHistory } from "@/services/history";
 import "@/styles/analysis.css";
 
-export default function AnalysisWorkspace({ supabase, user, openAuthModal }) {
+export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNavigateToForecasting }) {
   const [images, setImages] = useState([]);           // multi-image array
   const [query, setQuery] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -21,7 +19,6 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal }) {
   const [executionTime, setExecutionTime] = useState(null);
   const [error, setError] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [forecasterTab, setForecasterTab] = useState("preset");
 
   const resultsRef = useRef(null);
 
@@ -302,47 +299,29 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal }) {
             />
           </div>
 
-          {/* ================= FUTURE LAND-COVER FORECASTING ================= */}
-          <div className="mt-12">
-            <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-4 flex-1 w-full">
-                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-cyan-400/50" />
-                <span className="text-xs font-semibold tracking-[0.3em] text-cyan-300">
-                  MULTI-YEAR LAND-COVER FORECASTING
-                </span>
-                <div className="h-px flex-1 bg-gradient-to-l from-transparent via-violet-400/30 to-violet-400/50" />
+          {/* ================= MULTI-YEAR FORECASTING LAUNCH BANNER ================= */}
+          <div className="mt-14 rounded-3xl border border-violet-500/30 bg-gradient-to-r from-violet-950/40 via-[#070d18]/90 to-cyan-950/40 p-6 md:p-8 shadow-2xl backdrop-blur-2xl flex flex-col md:flex-row items-center justify-between gap-6 transition hover:border-violet-400/50">
+            <div className="flex-1 text-left">
+              <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-400/10 px-3 py-1 text-xs font-semibold text-violet-300 mb-3">
+                <TrendingUp className="h-3.5 w-3.5 text-violet-400" />
+                <span>MULTI-YEAR PREDICTIVE AI</span>
               </div>
-
-              {/* Mode Switcher Tabs */}
-              <div className="flex items-center bg-slate-900/90 border border-slate-800 p-1 rounded-xl text-xs">
-                <button
-                  onClick={() => setForecasterTab("preset")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
-                    forecasterTab === "preset"
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-inner"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Preset Demo Regions
-                </button>
-                <button
-                  onClick={() => setForecasterTab("dynamic")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
-                    forecasterTab === "dynamic"
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-inner"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Upload Custom Timeline
-                </button>
-              </div>
+              <h3 className="text-xl md:text-2xl font-bold text-white">
+                Multi-Year Land-Cover Forecasting Engine
+              </h3>
+              <p className="mt-2 text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Upload your custom multi-temporal Sentinel-2 GeoTIFF imagery across multiple years to extrapolate future land-cover dynamics, urban sprawl, and vegetation trends.
+              </p>
             </div>
-
-            {forecasterTab === "preset" ? (
-              <FuturePrediction defaultRegion="region_01" defaultYear={2027} />
-            ) : (
-              <DynamicFuturePrediction />
-            )}
+            
+            <button
+              type="button"
+              onClick={onNavigateToForecasting}
+              className="px-6 py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-cyan-500 to-violet-600 text-white hover:from-cyan-400 hover:to-violet-500 hover:scale-105 transition-all shadow-[0_0_25px_rgba(139,92,246,0.35)] flex items-center gap-2 cursor-pointer flex-shrink-0"
+            >
+              <span>Open Forecaster</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
         </section>
 
