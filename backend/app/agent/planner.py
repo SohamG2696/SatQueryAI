@@ -271,7 +271,7 @@ def build_analysis_plan(
         "detect change", "detect changes", "change detection", "increased between", "decreased between",
         "urban expansion", "deforestation", "growth between", "loss between", "before and after",
         "changes in", "change in", "area changed", "areas changed", "buildings changed",
-        "building changed", "vegetation changed"
+        "building changed", "vegetation changed", "compare", "comparison", "difference", "differences"
     )
     change_patterns = (
         r"\b(have|has|did)\b.+\b(changed?|increased|decreased|grown|shrunk)\b",
@@ -303,12 +303,41 @@ def build_analysis_plan(
         (has_optical and has_sar) or is_fusion_explicit
     ) and not is_gee_query and not is_future_pred
 
+    # Disambiguate cross-modal comparison from bi-temporal change
+    if is_fusion_query and not (
+        has_diff_dates
+        or any(k in q_lower for k in (
+            "what changed",
+            "changes",
+            "changed",
+            "temporal",
+            "over time",
+            "before and after",
+            "deforestation",
+            "expansion",
+            "growth",
+            "loss",
+            "between 20",
+            "from 20"
+        ))
+    ):
+        is_change_query = False
+
     # 4. Detect Grounding Intent
+    from app.agent.query_validator import extract_grounding_target
+    target_grounding, _ = extract_grounding_target(query)
     grounding_kw = (
         "find the", "locate the", "show where", "bounding box", "bbox",
-        "where are the", "where is the", "segment", "highlight the", "locate"
+        "where are the", "where is the", "segment", "highlight the", "locate",
+        "show me the", "show the", "identify the", "pinpoint the"
     )
-    is_grounding_query = any(k in q_lower for k in grounding_kw) and not is_gee_query and not is_future_pred
+    is_counting = bool(re.search(r"\b(how many|count|number of)\b", q_lower))
+    is_grounding_query = (
+        (target_grounding is not None or any(k in q_lower for k in grounding_kw))
+        and not is_counting
+        and not is_gee_query
+        and not is_future_pred
+    )
 
     # 5. Detect Captioning Intent
     caption_kw = ("describe", "caption", "summarize", "overview", "what is in this image")

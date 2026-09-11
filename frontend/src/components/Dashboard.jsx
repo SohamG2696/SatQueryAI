@@ -1,16 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import AnalysisWorkspace from './analysis/AnalysisWorkspace';
 import ForecastingWorkspace from './forecasting/ForecastingWorkspace';
+import SatelliteMapWorkspace from './map/SatelliteMapWorkspace';
 import ScrollBackgroundVideo from './ScrollBackgroundVideo';
 import { Layers, TrendingUp } from 'lucide-react';
 
 export default function Dashboard({ onBackToLanding, openAuthModal }) {
   const { user, profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('analysis'); // 'analysis' | 'forecasting'
+  const [activeTab, setActiveTab] = useState('analysis'); // 'analysis' | 'forecasting' | 'satellite-map'
+  const acquiredSatImagesRef = useRef(null);
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Researcher';
+
+  // Called by SatelliteMapWorkspace when imagery is acquired.
+  // Cache the images in ref so AnalysisWorkspace has them if the user navigates back.
+  // DO NOT switch tab here — the user stays on SatelliteMapWorkspace to preview, query, and analyze.
+  const handleSatImageAcquired = (payload) => {
+    acquiredSatImagesRef.current = payload;
+  };
 
   return (
     <div className="dashboard-page flex flex-col min-h-screen bg-transparent relative">
@@ -86,9 +95,14 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
         </div>
       </header>
 
-      {/* Main Integrated Workspace / Forecaster */}
+      {/* Main Integrated Workspace / Forecaster / Satellite Map */}
       <main className="flex-1">
-        {activeTab === 'forecasting' ? (
+        {activeTab === 'satellite-map' ? (
+          <SatelliteMapWorkspace
+            onBackToAnalysis={() => setActiveTab('analysis')}
+            onImageAcquired={handleSatImageAcquired}
+          />
+        ) : activeTab === 'forecasting' ? (
           <ForecastingWorkspace onBackToAnalysis={() => setActiveTab('analysis')} />
         ) : (
           <AnalysisWorkspace
@@ -96,6 +110,8 @@ export default function Dashboard({ onBackToLanding, openAuthModal }) {
             user={user}
             openAuthModal={openAuthModal}
             onNavigateToForecasting={() => setActiveTab('forecasting')}
+            onNavigateToSatelliteMap={() => setActiveTab('satellite-map')}
+            pendingSatImages={acquiredSatImagesRef}
           />
         )}
       </main>

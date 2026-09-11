@@ -1,4 +1,14 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+export function getApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== "undefined" && window.location && window.location.hostname) {
+    const protocol = window.location.protocol || "http:";
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:8000`;
+  }
+  return "http://127.0.0.1:8000";
+}
 
 /**
  * Executes a natural language vision-language query against the SatQuery AI FastAPI backend.
@@ -29,7 +39,7 @@ export async function executeQuery({ query, images = [], metadata = {} }) {
     formData.append("metadata", JSON.stringify(metadata));
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/query`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/query`, {
     method: "POST",
     body: formData,
   });
@@ -64,7 +74,7 @@ export async function predictFuture({ regionId, targetYear }) {
     throw new Error("target_year must be greater than 2025.");
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/predict-future`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/predict-future`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -120,7 +130,7 @@ export async function predictFutureDynamic({ images = [], years = [], query }) {
     }
   });
 
-  const response = await fetch(`${API_BASE_URL}/api/predict-future-dynamic`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/predict-future-dynamic`, {
     method: "POST",
     body: formData,
   });
@@ -144,8 +154,73 @@ export async function predictFutureDynamic({ images = [], years = [], query }) {
  */
 export async function getBackendHealth() {
   try {
-    const res = await fetch(`${API_BASE_URL}/health`);
+    const res = await fetch(`${getApiBaseUrl()}/health`);
     if (res.ok) return await res.json();
   } catch {}
   return null;
+}
+
+/**
+ * Acquires real Sentinel-2 L2A satellite imagery from CDSE / Sentinel Hub via backend.
+ *
+ * @param {Object} params
+ * @param {Array<number>} params.bbox - Bounding box [min_lon, min_lat, max_lon, max_lat]
+ * @param {string} [params.dateFrom] - ISO start date string
+ * @param {string} [params.dateTo] - ISO end date string
+ * @returns {Promise<Object>} Sentinel2Response from backend
+ */
+export async function acquireSentinel2Imagery({ bbox, dateFrom = "2025-01-01T00:00:00Z", dateTo = "2025-01-31T23:59:59Z", width = 256, height = 256 }) {
+  if (!bbox || bbox.length !== 4) {
+    throw new Error("bbox must contain exactly 4 coordinate floats: [min_lon, min_lat, max_lon, max_lat]");
+  }
+
+  console.log("[SatQuery-Trace] [acquireSentinel2Imagery] Initiating Sentinel-2 request to:", `${getApiBaseUrl()}/api/satellite/sentinel2`);
+  const requestPayload = {
+    bbox: bbox.map(Number),
+    date_from: dateFrom,
+    date_to: dateTo,
+    width,
+    height,
+  };
+  console.log("[SatQuery-Trace] [acquireSentinel2Imagery] Request Payload:", JSON.stringify(requestPayload));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/satellite/sentinel2`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestPayload),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    console.log("[SatQuery-Trace] [acquireSentinel2Imagery] HTTP Response Status:", response.status, response.statusText);
+
+    if (!response.ok) {
+      let detail = `Backend HTTP error ${response.status}`;
+      try {
+        const errJson = await response.json();
+        console.error("[SatQuery-Trace] [acquireSentinel2Imagery] Backend error JSON:", errJson);
+        if (errJson.detail) {
+          detail = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
+        }
+      } catch {}
+      throw new Error(detail);
+    }
+
+    const data = await response.json();
+    console.log("[SatQuery-Trace] [acquireSentinel2Imagery] Successful Response Data:", data);
+    return data;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.error("[SatQuery-Trace] [acquireSentinel2Imagery] Error caught:", err);
+    if (err.name === "AbortError") {
+      throw new Error("Sentinel-2 acquisition request timed out after 35s.");
+    }
+    throw err;
+  }
 }

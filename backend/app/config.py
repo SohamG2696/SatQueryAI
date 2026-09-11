@@ -69,8 +69,14 @@ class Settings(BaseSettings):
     # ── Logging ──────────────────────────────────────────────────
     log_level: str = "INFO"
 
-    # ── API Keys ─────────────────────────────────────────────────
+    # ── API Keys & OAuth Credentials ──────────────────────────────
     gemini_api_key: str = ""
+    copernicus_client_id: str = ""
+    copernicus_client_secret: str = ""
+    copernicus_token_url: str = (
+        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+    )
+    sentinel_hub_base_url: str = "https://sh.dataspace.copernicus.eu"
 
     @property
     def max_file_size_bytes(self) -> int:

@@ -88,24 +88,30 @@ def run_module(
 
     engine = get_grounding_engine()
     image_src = images[0]
-    tensor = prepare_optical_tensor(image_src, target_size=(224, 224), device=engine.device)
 
-    result = engine.predict(tensor, query)
+    orig_q = (metadata or {}).get("original_query") or (metadata or {}).get("query")
+    effective_q = query
+    if orig_q and any(k in orig_q.lower() for k in ("bounding box", "bbox", "smallest", "largest", "single", "contiguous", "bounding", "box")):
+        effective_q = orig_q
+
+    result = engine.predict(image_src, effective_q)
 
     return {
         "answer": result["answer"],
         "confidence": result.get("confidence", 0.82),
         "visual_evidence": result.get("visual_evidence"),
-        "model_name": "satquery-region-grounding-v1",
+        "model_name": result.get("model_name", "satquery-region-grounding-v1"),
         "parameters": {
             "query": query,
             "normalized_query": result.get("normalized_query"),
-            "coordinate_system": "normalized",
+            "coordinate_system": result.get("coordinate_system", "normalized"),
             "requested_target": result.get("requested_target"),
             "model_target": result.get("model_target"),
             "semantic_fallback": result.get("semantic_fallback"),
             "fallback_reason": result.get("fallback_reason"),
             "warning": result.get("warning"),
             "confidence_type": result.get("confidence_type"),
+            "classification_method": result.get("classification_method"),
+            "target_coverage_pct": result.get("target_coverage_pct"),
         },
     }

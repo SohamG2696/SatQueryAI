@@ -110,7 +110,10 @@ def detect_all_intents(query: str | None) -> List[str]:
         pass
 
     # Check for Grounding
-    if contains_keyword(q, _GROUNDING_KEYWORDS):
+    from app.agent.query_validator import extract_grounding_target
+    g_target, _ = extract_grounding_target(q)
+    is_counting = bool(re.search(r"\b(how many|count|number of)\b", q.lower()))
+    if not is_counting and (g_target is not None or contains_keyword(q, _GROUNDING_KEYWORDS)):
         detected.append("grounding")
 
     # Check for Change

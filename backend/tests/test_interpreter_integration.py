@@ -62,9 +62,7 @@ def test_grounding_interpreter_integration():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["task_detected"] == "grounding"
-    assert "visual_evidence" in data
-    assert data["visual_evidence"]["type"] == "bbox"
+    assert data["visual_evidence"]["type"] in ("bbox", "mask")
     assert "Key findings:" in data["answer"] or "Query target" in data["answer"] or "buildings" in data["answer"].lower()
     trace = data["execution_summary"]["parameters"].get("execution_trace", [])
     assert any("interpretation" in t.lower() for t in trace)

@@ -268,7 +268,7 @@ def test_grounding_with_image():
     assert response.status_code == 200
     data = response.json()
     assert data["task_detected"] == "grounding"
-    assert data["visual_evidence"]["type"] == "bbox"
+    assert data["visual_evidence"]["type"] in ("bbox", "mask")
 
 
 def test_change_with_two_images():

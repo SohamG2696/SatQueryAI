@@ -81,10 +81,18 @@ class ChangeVQAInferenceEngine:
     ):
         self.device = device or torch.device("cpu")
 
-        # Build ChangeFormerV6
-        from .changeformer.networks import define_G  # noqa: PLC0415
-        from types import SimpleNamespace
+        try:
+            from .changeformer.networks import define_G  # noqa: PLC0415
+        except ImportError:
+            try:
+                from models.change_vqa.changeformer.networks import define_G  # noqa: PLC0415
+            except ImportError:
+                try:
+                    from changeformer.networks import define_G  # noqa: PLC0415
+                except ImportError:
+                    from networks import define_G  # noqa: PLC0415
 
+        from types import SimpleNamespace
         args = SimpleNamespace(net_G="ChangeFormerV6", embed_dim=256)
         self.model = define_G(args, init_type="normal", init_gain=0.02, gpu_ids=[])
         self.has_checkpoint = False
@@ -144,7 +152,28 @@ class ChangeVQAInferenceEngine:
         if isinstance(source, Image.Image):
             pil = source.convert("RGB")
         elif isinstance(source, (str, Path)):
-            pil = Image.open(source).convert("RGB")
+            path = Path(source)
+            try:
+                pil = Image.open(path).convert("RGB")
+            except Exception:
+                # Fallback for multi-band satellite rasters (e.g. GeoTIFFs with >4 bands)
+                try:
+                    import rasterio
+                    with rasterio.open(path) as ds:
+                        desc = ds.descriptions or ()
+                        if "TCI_R" in desc and "TCI_G" in desc and "TCI_B" in desc:
+                            arr = ds.read([desc.index("TCI_R") + 1, desc.index("TCI_G") + 1, desc.index("TCI_B") + 1]).astype(np.float32)
+                        elif ds.count >= 3:
+                            arr = ds.read([1, 2, 3]).astype(np.float32)
+                        else:
+                            arr = ds.read(1).astype(np.float32)
+                            arr = np.stack([arr] * 3, axis=0)
+                        if arr.max() > 1.0:
+                            arr = arr / 255.0
+                        t = torch.from_numpy(arr).unsqueeze(0)
+                        return F.interpolate(t, size=(self.MODEL_IMG_SIZE, self.MODEL_IMG_SIZE), mode="bilinear", align_corners=False).clamp(0, 1)
+                except Exception as raster_err:
+                    raise ValueError(f"[ChangeVQA] Failed to load image from path '{path}': {raster_err}")
         elif isinstance(source, (bytes, io.BytesIO)):
             buf = io.BytesIO(source) if isinstance(source, bytes) else source
             pil = Image.open(buf).convert("RGB")
@@ -157,7 +186,31 @@ class ChangeVQAInferenceEngine:
         return torch.from_numpy(arr).unsqueeze(0)
 
     @staticmethod
+    def _create_composite_overlay(
+        base_rgb: np.ndarray,
+        mask: np.ndarray,
+        color: tuple[int, int, int] = (235, 45, 45),
+        alpha: float = 0.45,
+    ) -> str:
+        """
+        Composite a semi-transparent highlight overlay on top of the real base RGB image
+        wherever mask == 1. Unchanged pixels remain untouched.
+        Returns base64 PNG string.
+        """
+        overlay_arr = base_rgb.copy().astype(np.float32)
+        change_idx = (mask == 1)
+        if np.any(change_idx):
+            color_arr = np.array(color, dtype=np.float32)
+            overlay_arr[change_idx] = (1.0 - alpha) * overlay_arr[change_idx] + alpha * color_arr
+        overlay_arr = np.clip(overlay_arr, 0, 255).astype(np.uint8)
+        pil = Image.fromarray(overlay_arr, mode="RGB")
+        buf = io.BytesIO()
+        pil.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    @staticmethod
     def _mask_to_base64(mask: np.ndarray) -> str:
+        """Raw binary change mask (red = changed, dark gray = unchanged)."""
         rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
         rgb[mask == 1] = [220, 50, 50]
         rgb[mask == 0] = [30, 30, 30]
@@ -223,7 +276,11 @@ class ChangeVQAInferenceEngine:
         if dates and len(dates) >= 2:
             date_str = f" between {dates[0]} and {dates[1]}"
 
-        mask_b64 = self._mask_to_base64(pred_mask)
+        # ── generate visual grounding evidence ────────────────────────────────
+        # Extract 256×256 RGB image of T2 (post-change) for visual grounding overlay
+        t2_rgb = (t2.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        composite_b64 = self._create_composite_overlay(t2_rgb, pred_mask, color=(235, 45, 45), alpha=0.45)
+        raw_mask_b64 = self._mask_to_base64(pred_mask)
 
         return {
             "answer": answer,
@@ -233,9 +290,12 @@ class ChangeVQAInferenceEngine:
             "global_change_ratio": round(global_change_ratio, 4),
             "category": target_category,
             "question_type": question_type,
+            "change_mask_base64": composite_b64,
+            "raw_change_mask_base64": raw_mask_b64,
             "visual_evidence": {
                 "type": "change_mask",
-                "change_mask_base64": mask_b64,
+                "change_mask_base64": composite_b64,
+                "raw_change_mask_base64": raw_mask_b64,
                 "changed_pixels": int(pred_mask.sum()),
                 "total_pixels": int(pred_mask.size),
                 "change_ratio": round(global_change_ratio, 4),

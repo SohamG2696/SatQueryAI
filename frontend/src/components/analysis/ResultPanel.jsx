@@ -12,9 +12,10 @@ import {
   FileCheck,
   Eye,
   MapPin,
+  Crosshair,
 } from "lucide-react";
 
-function ResultPanel({ analysisResult, isAnalyzing, currentStep, error }) {
+function ResultPanel({ analysisResult, isAnalyzing, currentStep, error, images = [] }) {
   const [copied, setCopied] = useState(false);
 
   // ERROR STATE
@@ -387,53 +388,238 @@ Confidence      : ${analysisResult.confidence || "Not available"}
               VISUAL GROUNDING EVIDENCE ({veType.toUpperCase()})
             </div>
 
-            {maskB64 && (
-              <div className="flex flex-col items-center gap-3">
-                <div className="text-xs text-slate-300 font-medium">Change Mask Overlay</div>
-                <img
-                  src={`data:image/png;base64,${maskB64}`}
-                  alt="Change Detection Mask"
-                  className="rounded-xl border border-cyan-400/40 max-h-64 object-contain shadow-[0_0_20px_rgba(34,211,238,0.2)]"
-                />
-                {ve.data?.changed_pixels != null && (
-                  <div className="text-xs text-slate-400 font-mono">
-                    Changed Pixels: <span className="text-cyan-300">{ve.data.changed_pixels.toLocaleString()}</span> / {ve.data.total_pixels?.toLocaleString()}
-                  </div>
-                )}
-              </div>
-            )}
+            {maskB64 && (() => {
+              const isGrounding = analysisResult.task_detected === "grounding" || ve.data?.classification_method || ve.classification_method;
+              const method = ve.data?.classification_method || ve.classification_method;
+              const targetClass = ve.data?.target_class || ve.target_class || analysisResult.rawResponse?.target || "Target Region";
+              const coveragePct = ve.data?.target_coverage_pct ?? ve.target_coverage_pct;
+              const coveredPx = ve.data?.target_pixels ?? ve.data?.changed_pixels ?? ve.target_pixels ?? ve.changed_pixels;
+              const totalPx = ve.data?.total_pixels ?? ve.total_pixels;
+              const isFallback = Boolean(analysisResult.rawResponse?.execution_summary?.parameters?.semantic_fallback);
+              const warningMsg = analysisResult.rawResponse?.execution_summary?.parameters?.warning;
 
-            {coords && coords.length >= 4 && (
-              <div className="rounded-xl border border-violet-400/30 bg-violet-950/20 p-4">
-                <div className="flex items-center justify-between text-xs text-slate-300 font-medium mb-3">
-                  <span className="flex items-center gap-1.5 text-violet-300">
-                    <MapPin className="h-4 w-4 text-violet-400" />
-                    Grounded Spatial Bounding Box
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 uppercase">
-                    System: {ve.coordinate_system || "normalized"}
-                  </span>
+              return (
+                <div className="flex flex-col items-center gap-4">
+                  {/* Title & Classification Pill */}
+                  <div className="flex flex-wrap items-center justify-between w-full gap-2 text-xs">
+                    <span className="text-xs text-slate-300 font-medium tracking-wide">
+                      {isGrounding ? `Grounded Region Highlight Overlay (${targetClass})` : "Change Mask Overlay"}
+                    </span>
+                    {method && (
+                      <div className="flex items-center gap-2">
+                        {method === "spectral_scl" ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[11px] font-medium shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                            Sentinel-2 SCL Spectral Classification (Validated)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[11px] font-medium shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                            RGB Texture &amp; Spectral Heuristic (Lower Precision)
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Highlight Overlay Image Viewport */}
+                  <div className="relative w-full max-w-2xl mx-auto rounded-2xl overflow-hidden border border-cyan-400/40 bg-black/90 shadow-[0_0_30px_rgba(34,211,238,0.15)] group">
+                    <img
+                      src={`data:image/png;base64,${maskB64}`}
+                      alt={isGrounding ? "Region Grounding Highlight Overlay" : "Change Detection Mask"}
+                      className="w-full h-auto block object-contain max-h-[520px] select-none"
+                    />
+                    {/* Subtle Satellite HUD Scanlines */}
+                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_50%,rgba(0,0,0,0.22)_51%)] bg-[length:100%_4px] opacity-25" />
+                  </div>
+
+                  {/* Coverage Metrics */}
+                  <div className="flex flex-wrap items-center justify-between w-full text-xs text-slate-400 font-mono px-1">
+                    {coveragePct != null && (
+                      <div>
+                        Target Scene Coverage: <span className="text-cyan-300 font-bold">{coveragePct}%</span>
+                      </div>
+                    )}
+                    {coveredPx != null && totalPx != null && (
+                      <div>
+                        {isGrounding ? "Target Pixels: " : "Changed Pixels: "}
+                        <span className="text-cyan-300 font-semibold">{coveredPx.toLocaleString()}</span> / {totalPx.toLocaleString()} px
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Semantic Fallback Notice (Only if RGB Heuristic Fallback is truly active) */}
+                  {isFallback && warningMsg && (
+                    <div className="w-full flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-2.5 text-xs text-amber-200 mt-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-semibold text-amber-300">Semantic Fallback Mode Active</p>
+                        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                          {warningMsg}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-center font-mono text-xs">
-                  <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
-                    <span className="block text-[10px] text-slate-500 mb-1">X MIN</span>
-                    <span className="text-cyan-300 font-bold text-sm">{coords[0]}</span>
-                  </div>
-                  <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
-                    <span className="block text-[10px] text-slate-500 mb-1">Y MIN</span>
-                    <span className="text-cyan-300 font-bold text-sm">{coords[1]}</span>
-                  </div>
-                  <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
-                    <span className="block text-[10px] text-slate-500 mb-1">X MAX</span>
-                    <span className="text-cyan-300 font-bold text-sm">{coords[2]}</span>
-                  </div>
-                  <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
-                    <span className="block text-[10px] text-slate-500 mb-1">Y MAX</span>
-                    <span className="text-cyan-300 font-bold text-sm">{coords[3]}</span>
+              );
+            })()}
+
+            {!maskB64 && coords && coords.length >= 4 && (() => {
+              const [x1Raw, y1Raw, x2Raw, y2Raw] = coords;
+              const x1 = parseFloat(x1Raw);
+              const y1 = parseFloat(y1Raw);
+              const x2 = parseFloat(x2Raw);
+              const y2 = parseFloat(y2Raw);
+
+              const xMin = Math.max(0, Math.min(1, Math.min(x1, x2)));
+              const xMax = Math.max(0, Math.min(1, Math.max(x1, x2)));
+              const yMin = Math.max(0, Math.min(1, Math.min(y1, y2)));
+              const yMax = Math.max(0, Math.min(1, Math.max(y1, y2)));
+
+              const leftPct = (xMin * 100).toFixed(2);
+              const topPct = (yMin * 100).toFixed(2);
+              const widthPct = Math.max(2, (xMax - xMin) * 100).toFixed(2);
+              const heightPct = Math.max(2, (yMax - yMin) * 100).toFixed(2);
+
+              const displayImageUrl =
+                images?.[0]?.url ||
+                analysisResult?.imageUrl ||
+                analysisResult?.images?.[0]?.url ||
+                (typeof images?.[0] === "string" ? images[0] : null);
+
+              const rawParams = analysisResult.rawResponse?.execution_summary?.parameters || {};
+              const targetName =
+                rawParams.requested_target ||
+                analysisResult.rawResponse?.target ||
+                rawParams.target ||
+                analysisResult.objectType ||
+                "Target Region";
+              const modelTarget = rawParams.model_target;
+              const isFallback = Boolean(rawParams.semantic_fallback);
+              const warningMsg = rawParams.warning;
+              const confidenceStr = analysisResult.confidence;
+
+              return (
+                <div className="space-y-4">
+                  {/* SATELLITE IMAGE WITH HIGHLIGHTED BOUNDING BOX OVERLAY */}
+                  {displayImageUrl ? (
+                    <div className="flex flex-col items-center gap-3">
+                      {/* Target Header Bar */}
+                      <div className="flex flex-wrap items-center justify-between w-full gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-400/30 text-cyan-300 font-semibold tracking-wide uppercase text-[11px]">
+                            <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
+                            Target: {targetName}
+                          </span>
+                          {isFallback && modelTarget && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-300 text-[10px] font-medium">
+                              Class: {modelTarget} (Fallback)
+                            </span>
+                          )}
+                        </div>
+                        {confidenceStr && confidenceStr !== "Not available" && (
+                          <span className="font-mono text-[11px] text-slate-400">
+                            Confidence: <span className="text-cyan-300 font-semibold">{confidenceStr}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Interactive Visual Overlay Viewport */}
+                      <div className="relative w-full max-w-2xl mx-auto rounded-2xl overflow-hidden border border-cyan-400/40 bg-black/90 shadow-[0_0_30px_rgba(34,211,238,0.15)] group">
+                        {/* Base Uploaded Satellite Imagery */}
+                        <img
+                          src={displayImageUrl}
+                          alt={`Grounded Satellite Scene: ${targetName}`}
+                          className="w-full h-auto block object-contain max-h-[520px] select-none"
+                        />
+
+                        {/* Responsive Highlighted Bounding Box Overlay */}
+                        <div
+                          className="absolute pointer-events-none transition-all duration-300"
+                          style={{
+                            left: `${leftPct}%`,
+                            top: `${topPct}%`,
+                            width: `${widthPct}%`,
+                            height: `${heightPct}%`,
+                          }}
+                        >
+                          {/* Glowing Neon Box */}
+                          <div className="w-full h-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_20px_rgba(34,211,238,0.6),inset_0_0_15px_rgba(34,211,238,0.2)] rounded-sm relative">
+                            {/* High-Precision GIS Corner Brackets */}
+                            <div className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-cyan-300 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-cyan-300 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                            <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-cyan-300 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                            <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-cyan-300 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+
+                            {/* Floating Target Label */}
+                            <div
+                              className={`absolute left-0 flex items-center gap-1.5 px-2 py-0.5 rounded shadow-lg tracking-wider uppercase font-bold text-[10px] whitespace-nowrap border ${
+                                parseFloat(topPct) > 8
+                                  ? "-top-6 bg-[#040914]/95 border-cyan-400/80 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+                                  : "top-1 left-1 bg-[#040914]/95 border-cyan-400/80 text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+                              }`}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                              <span>{targetName}</span>
+                              {isFallback && (
+                                <span className="text-[9px] text-amber-300 font-normal">({modelTarget})</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Subtle Satellite HUD Scanlines */}
+                        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_50%,rgba(0,0,0,0.22)_51%)] bg-[length:100%_4px] opacity-25" />
+                      </div>
+
+                      {/* Semantic Fallback Notice */}
+                      {isFallback && (
+                        <div className="w-full flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-2.5 text-xs text-amber-200">
+                          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <p className="font-semibold text-amber-300">Semantic Fallback Mode Active</p>
+                            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                              {warningMsg || `The requested entity "${targetName}" was grounded to the broader "${modelTarget}" land-cover class supported by the model.`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {/* NUMERIC COORDINATE BADGES */}
+                  <div className="rounded-xl border border-violet-400/30 bg-violet-950/20 p-4">
+                    <div className="flex items-center justify-between text-xs text-slate-300 font-medium mb-3">
+                      <span className="flex items-center gap-1.5 text-violet-300">
+                        <MapPin className="h-4 w-4 text-violet-400" />
+                        Grounded Spatial Coordinates
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400 uppercase">
+                        System: {ve.coordinate_system || "normalized"} · Range: [0.0000 – 1.0000]
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center font-mono text-xs">
+                      <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
+                        <span className="block text-[10px] text-slate-500 mb-1">X MIN</span>
+                        <span className="text-cyan-300 font-bold text-sm">{coords[0]}</span>
+                      </div>
+                      <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
+                        <span className="block text-[10px] text-slate-500 mb-1">Y MIN</span>
+                        <span className="text-cyan-300 font-bold text-sm">{coords[1]}</span>
+                      </div>
+                      <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
+                        <span className="block text-[10px] text-slate-500 mb-1">X MAX</span>
+                        <span className="text-cyan-300 font-bold text-sm">{coords[2]}</span>
+                      </div>
+                      <div className="rounded-lg bg-black/50 p-2.5 border border-white/10">
+                        <span className="block text-[10px] text-slate-500 mb-1">Y MAX</span>
+                        <span className="text-cyan-300 font-bold text-sm">{coords[3]}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         );
       })()}

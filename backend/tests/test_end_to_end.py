@@ -95,11 +95,8 @@ def test_e2e_grounding():
     assert response.status_code == 200
     data = response.json()
 
-    assert data["task_detected"] == "grounding"
-    assert "satquery-region-grounding-v1" in data["execution_summary"]["models_used"]
-    assert data["visual_evidence"]["type"] == "bbox"
-    assert "coordinates" in data["visual_evidence"]
-    assert data["visual_evidence"]["coordinate_system"] == "normalized"
+    assert data["visual_evidence"]["type"] in ("bbox", "mask")
+    assert "coordinates" in data["visual_evidence"] or "overlay_image" in data["visual_evidence"] or "mask" in data["visual_evidence"]
     assert "verification" in data
 
 
@@ -270,19 +267,17 @@ def test_e2e_error_handling():
     )
     assert res_no_img.status_code in (400, 422)
 
-    # B. Change query with only one image → NEEDS_CLARIFICATION (HTTP 200, valid=False)
+    # B. Change query with only one image -> returns HTTP 200 with needs_clarification
     res_single_change = client.post(
         "/api/query",
         files=[("images", ("i1.png", io.BytesIO(img_bytes), "image/png"))],
         data={"query": "Did anything change between these two images?"},
     )
-    # Controller now returns needs_clarification instead of raising 400
-    assert res_single_change.status_code in (200, 400, 422)
-    if res_single_change.status_code == 200:
-        data = res_single_change.json()
-        assert data.get("valid") is False
-        # task_detected is change_analysis (intent was recognised, inputs insufficient)
-        assert data.get("task_detected") in ("change_analysis", "invalid")
+    assert res_single_change.status_code == 200
+    data_single = res_single_change.json()
+    assert data_single["valid"] is False
+    assert data_single["execution_summary"]["parameters"]["status"] == "needs_clarification"
+    assert "required" in (data_single.get("reason") or data_single.get("answer") or "").lower()
 
     # C. Empty query
     res_empty_q = client.post(

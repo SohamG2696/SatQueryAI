@@ -27,11 +27,10 @@ Response Schema (FastAPI Compatible)
     "change_ratio": 0.6337,
     "global_change_ratio": 0.1800,
     "category": "buildings",
-    "category_change_ratio": 0.6337,
     "has_grounding": true,
     "change_mask_base64": "iVBORw0KGgoAAAANSUhEUg...",
+    "raw_change_mask_base64": "iVBORw0KGgoAAAANSUhEUg...",
     "task": "change_detection",
-    "model": "ChangeFormerV6",
     "question_type": "change_or_not",
     "question": "Have the areas of buildings changed?",
     "metrics": {
@@ -263,8 +262,25 @@ class ChangeAnalyzer:
                 raise FileNotFoundError(f"Input image file does not exist: {path}")
             try:
                 pil = Image.open(path).convert("RGB")
-            except Exception as e:
-                raise ValueError(f"Failed to load image from path '{path}': {e}")
+            except Exception:
+                # Fallback for multi-band satellite rasters (e.g. GeoTIFFs with >4 bands)
+                try:
+                    import rasterio
+                    with rasterio.open(path) as ds:
+                        desc = ds.descriptions or ()
+                        if "TCI_R" in desc and "TCI_G" in desc and "TCI_B" in desc:
+                            arr = ds.read([desc.index("TCI_R") + 1, desc.index("TCI_G") + 1, desc.index("TCI_B") + 1]).astype(np.float32)
+                        elif ds.count >= 3:
+                            arr = ds.read([1, 2, 3]).astype(np.float32)
+                        else:
+                            arr = ds.read(1).astype(np.float32)
+                            arr = np.stack([arr] * 3, axis=0)
+                        if arr.max() > 1.0:
+                            arr = arr / 255.0
+                        t = torch.from_numpy(arr).unsqueeze(0)
+                        return F.interpolate(t, size=(self.model_img_size, self.model_img_size), mode="bilinear", align_corners=False).clamp(0, 1)
+                except Exception as raster_err:
+                    raise ValueError(f"Failed to load image from path '{path}': {raster_err}")
         elif isinstance(source, Image.Image):
             pil = source.convert("RGB")
         else:
@@ -278,8 +294,31 @@ class ChangeAnalyzer:
         arr = np.transpose(arr, (2, 0, 1))
         return torch.from_numpy(arr).unsqueeze(0)
 
+    @staticmethod
+    def _create_composite_overlay(
+        base_rgb: np.ndarray,
+        mask: np.ndarray,
+        color: tuple[int, int, int] = (235, 45, 45),
+        alpha: float = 0.45,
+    ) -> str:
+        """
+        Composite a semi-transparent highlight overlay on top of the real base RGB image
+        wherever mask == 1. Unchanged pixels remain untouched.
+        Returns base64 PNG string.
+        """
+        overlay_arr = base_rgb.copy().astype(np.float32)
+        change_idx = (mask == 1)
+        if np.any(change_idx):
+            color_arr = np.array(color, dtype=np.float32)
+            overlay_arr[change_idx] = (1.0 - alpha) * overlay_arr[change_idx] + alpha * color_arr
+        overlay_arr = np.clip(overlay_arr, 0, 255).astype(np.uint8)
+        pil = Image.fromarray(overlay_arr, mode="RGB")
+        buf = io.BytesIO()
+        pil.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
     def _mask_to_base64_png(self, mask: np.ndarray) -> str:
-        """Convert binary mask (H, W) to base64 PNG string."""
+        """Convert binary mask (H, W) to raw binary mask base64 PNG string."""
         H, W = mask.shape
         rgb = np.zeros((H, W, 3), dtype=np.uint8)
         rgb[mask == 1] = [220, 50, 50]
@@ -439,7 +478,9 @@ class ChangeAnalyzer:
             answer = f"The change ratio{cat_label} is approximately {target_r*100:.1f}% ({bracket})."
 
         # 5. Base64 Mask & Device Sync
-        mask_b64 = self._mask_to_base64_png(pred_mask)
+        t2_rgb = (t2.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+        composite_b64 = self._create_composite_overlay(t2_rgb, pred_mask, color=(235, 45, 45), alpha=0.45)
+        raw_mask_b64 = self._mask_to_base64_png(pred_mask)
         if self.device.type == "xpu":
             try:
                 torch.xpu.synchronize()
@@ -459,7 +500,8 @@ class ChangeAnalyzer:
             "has_grounding": has_grounding,
             "category_metrics": cat_stats,
             "all_category_metrics": all_cat_stats,
-            "change_mask_base64": mask_b64,
+            "change_mask_base64": composite_b64,
+            "raw_change_mask_base64": raw_mask_b64,
             "task": "change_detection",
             "model": self.MODEL_NAME,
             "question_type": question_type,

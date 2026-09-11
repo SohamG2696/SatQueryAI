@@ -210,7 +210,6 @@ def test_9_single_model_regression():
     assert data_cap["task_detected"] == "captioning"
     assert data_cap["confidence_by_task"] is None
 
-    # 2. Grounding
     resp_grd = client.post(
         "/api/query",
         files=[("images", ("opt.png", io.BytesIO(opt_bytes), "image/png"))],
@@ -219,5 +218,5 @@ def test_9_single_model_regression():
     assert resp_grd.status_code == 200
     data_grd = resp_grd.json()
     assert data_grd["task_detected"] == "grounding"
-    assert data_grd["visual_evidence"]["type"] == "bbox"
+    assert data_grd["visual_evidence"]["type"] in ("bbox", "mask")
     assert data_grd["confidence_by_task"] is None

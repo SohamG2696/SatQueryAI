@@ -249,11 +249,19 @@ _SCENE_DESCRIPTION_PATTERNS: List[re.Pattern] = [
 
 # Grounding Target Extraction Map
 _GROUNDING_PREFIXES = (
-    "where is the", "where are the", "where is", "where are",
-    "locate the", "locate", "find the", "find",
-    "highlight the", "highlight", "show where the", "show where is", "show where are",
-    "show where", "pinpoint the", "pinpoint", "segment the", "segment",
-    "spot the", "spot", "detect where", "bounding box for", "bbox for", "coordinates of",
+    "show where are the", "show where is the", "show where the",
+    "show where are", "show where is", "show where",
+    "show me where are", "show me where is", "show me where",
+    "show me the", "show me", "show the",
+    "where are the", "where is the", "where are", "where is",
+    "identify the", "identify",
+    "locate the", "locate",
+    "find the", "find",
+    "highlight the", "highlight",
+    "pinpoint the", "pinpoint",
+    "segment the", "segment",
+    "spot the", "spot",
+    "detect where", "bounding box for", "bbox for", "coordinates of",
 )
 
 _TARGET_NORMALIZATIONS = {
@@ -435,6 +443,10 @@ def extract_grounding_target(query: str) -> Tuple[Optional[str], Optional[str]]:
     """
     q_clean = query.strip().rstrip("?.!").lower()
 
+    # Guard: Counting queries must never be classified as grounding
+    if re.search(r"\b(how many|count|number of)\b", q_clean):
+        return None, None
+
     matched_prefix = None
     for prefix in _GROUNDING_PREFIXES:
         if q_clean.startswith(prefix + " ") or q_clean == prefix:
@@ -445,7 +457,8 @@ def extract_grounding_target(query: str) -> Tuple[Optional[str], Optional[str]]:
         raw_target = q_clean[len(matched_prefix):].strip()
         # Clean articles
         raw_target = re.sub(r"^(the|a|an|any|all)\s+", "", raw_target).strip()
-        # Clean trailing descriptors
+        # Clean trailing descriptors and spatial verbs
+        raw_target = re.sub(r"\s+(are\s+located|are\s+situated|located|situated|found|are)\b.*$", "", raw_target).strip()
         raw_target = re.sub(r"\s+(in|on|across|inside|within)\s+(the|this)\s+(satellite\s+|aerial\s+)?(image|scene|photo).*$", "", raw_target).strip()
 
         if raw_target in _TARGET_NORMALIZATIONS:
@@ -456,9 +469,19 @@ def extract_grounding_target(query: str) -> Tuple[Optional[str], Optional[str]]:
             if key in raw_target:
                 return canonical, "locate"
 
+        # For generic verbs (identify, show, show me), only treat as grounding if target refers to a remote-sensing entity
+        generic_prefixes = ("identify", "identify the", "show", "show the", "show me", "show me the")
+        non_spatial_tokens = {"image", "scene", "photo", "types", "what", "classes", "difference", "change", "changes", "land"}
+
+        if matched_prefix in generic_prefixes:
+            target_tokens = set(re.findall(r"\b\w+\b", raw_target))
+            valid_spatial = bool(target_tokens.intersection(_REMOTE_SENSING_ENTITIES - non_spatial_tokens))
+            if not valid_spatial:
+                return None, None
+
         # Fallback sanitized target if non-empty
         cleaned = re.sub(r"[^\w\s]", "", raw_target).strip().replace(" ", "_")
-        if cleaned:
+        if cleaned and cleaned not in non_spatial_tokens:
             return cleaned, "locate"
 
     return None, None
@@ -526,7 +549,10 @@ def evaluate_domain_guardrail(
     query: str | None,
     image_count: int = 0,
     metadata: Optional[Dict[str, Any]] = None,
+    images: Optional[List[Any]] = None,
 ) -> DomainGuardrailResult:
+    if images is not None and image_count == 0:
+        image_count = len(images)
     """Evaluate whether the query belongs to SatQuery's supported remote-sensing domain.
     
     Executes BEFORE specialist model execution to:
@@ -749,9 +775,14 @@ def evaluate_domain_guardrail(
 
 def validate_query_intent(
     query: str | None,
-    image_count: int = 0,
+    image_count: int = 1,
+    images: Optional[List[Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> ValidationResult:
+    if images is not None:
+        effective_count = len(images)
+    else:
+        effective_count = image_count
     """Validate query against supported remote sensing domains and normalize to canonical representation.
 
     Pipeline:
@@ -771,8 +802,9 @@ def validate_query_intent(
     # 1. Execute Strict Domain Guardrail
     guardrail = evaluate_domain_guardrail(
         query=raw_query,
-        image_count=image_count,
+        image_count=effective_count,
         metadata=meta,
+        images=images,
     )
 
     if not guardrail.domain_valid:
@@ -896,7 +928,7 @@ def validate_query_intent(
         "fetch imagery", "search imagery", "retrieve imagery", "retrieve sentinel", "find sentinel",
     )
     if any(k in q_lower for k in gee_retrieval_keywords) and (
-        image_count == 0 or any(k in q_lower for k in ("find", "fetch", "get", "retrieve", "search", "download", "between", "cloud", "polarization", "latitude", "lat", "longitude", "lon"))
+        effective_count == 0 or any(k in q_lower for k in ("find", "fetch", "get", "retrieve", "search", "download", "between", "cloud", "polarization", "latitude", "lat", "longitude", "lon"))
     ):
         return ValidationResult(
             valid=True,
@@ -908,11 +940,26 @@ def validate_query_intent(
             operation="imagery_retrieval",
         )
 
-    # 6. Check for Spatial Grounding Intent
+    # 6. Check for Future Prediction / Land-Cover Forecasting Intent
+    if guardrail.task_detected == "future_prediction" or any(k in q_lower for k in ("predict future", "future land-cover", "future land cover", "predict land cover", "predict land-cover", "forecasting", "future changes", "future change", "predict 20", "forecast 20", "prediction for 20", "future prediction", "forecast", "predict")):
+        return ValidationResult(
+            valid=True,
+            status=GuardrailStatus.VALID,
+            intent="future_prediction",
+            canonical_task="future_prediction",
+            canonical_prompt=raw_query,
+            confidence=0.96,
+            operation="future_prediction",
+        )
+
+    # 7. Check for Spatial Grounding Intent
     target, operation = extract_grounding_target(raw_query)
     if target is not None:
         target_display = target.replace("_", " ")
-        canonical_prompt = CANONICAL_GROUNDING_TEMPLATE.format(target=target_display)
+        if any(k in q_lower for k in ("bounding box", "bbox", "smallest", "largest", "single", "contiguous", "bounding", "box")):
+            canonical_prompt = raw_query
+        else:
+            canonical_prompt = CANONICAL_GROUNDING_TEMPLATE.format(target=target_display)
         return ValidationResult(
             valid=True,
             status=GuardrailStatus.VALID,

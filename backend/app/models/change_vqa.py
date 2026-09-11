@@ -105,5 +105,6 @@ def run_module(
         "category": result.get("category"),
         "question_type": result.get("question_type"),
         "change_mask_base64": result.get("visual_evidence", {}).get("change_mask_base64"),
+        "raw_change_mask_base64": result.get("visual_evidence", {}).get("raw_change_mask_base64"),
         "has_grounding": False,
     }

@@ -145,6 +145,15 @@ def _interpret_vqa(
 ) -> Interpretation:
     raw_answer = _safe_str(result.get("answer", ""))
     clean_answer = re.sub(r"\.{2,}", ".", raw_answer).strip()
+
+    # Format bare digits/numbers into natural sentences for counting queries
+    is_counting_query = bool(re.search(r"\b(how many|count|number of)\b", query.lower()))
+    if is_counting_query and (clean_answer.isdigit() or re.match(r"^\d+\.?$", clean_answer)):
+        num = clean_answer.rstrip(".")
+        counting_match = re.search(r"\b(how many|count|number of)\s+([a-zA-Z\s_-]+?)(?:\s+(?:are|is|in|on|visible)|\?|$)", query.lower())
+        entity = counting_match.group(2).strip() if counting_match else "features"
+        clean_answer = f"There {'is' if num == '1' else 'are'} approximately {num} {entity} visible in the image."
+
     model_name = _safe_str(result.get("model_name", "satquery-vlm-person-a"))
     conf = result.get("confidence")
 
@@ -233,9 +242,58 @@ def _interpret_grounding(
     model_name = _safe_str(result.get("model_name", "satquery-region-grounding-v1"))
 
     vis_ev = evidence or result.get("visual_evidence", {})
+    if hasattr(vis_ev, "model_dump"):
+        vis_ev = vis_ev.model_dump()
     coords = vis_ev.get("coordinates") if isinstance(vis_ev, dict) else None
     ev_type = vis_ev.get("type", "none") if isinstance(vis_ev, dict) else "none"
+    method = vis_ev.get("classification_method") if isinstance(vis_ev, dict) else None
+    target_class = vis_ev.get("target_class", norm_query) if isinstance(vis_ev, dict) else norm_query
+    coverage = vis_ev.get("target_coverage_pct") if isinstance(vis_ev, dict) else None
 
+    # ── MASK REGION GROUNDING (SCL OR RGB HEURISTIC) ──────────────────────────
+    if ev_type == "mask" or method:
+        findings = [f"Model used: {model_name}", f"Query target: {target_class}"]
+        if method == "spectral_scl":
+            findings.append("Classification method: Sentinel-2 SCL Spectral Classification (Validated)")
+        else:
+            findings.append("Classification method: Visible-spectrum RGB texture & spectral heuristic (Estimate)")
+
+        if coverage is not None:
+            findings.append(f"Target coverage: {coverage}% of scene")
+        if conf is not None:
+            findings.append(f"Confidence score: {_fmt_pct(conf)}")
+
+        if method == "spectral_scl":
+            summary = (
+                f"Identified and highlighted {target_class} regions across {coverage if coverage is not None else ''}% "
+                f"of the satellite scene using Sentinel-2 Scene Classification Layer (SCL)."
+            )
+            explanation = (
+                "Spectral classification extracted ESA Scene Classification Layer (SCL) surface categories directly "
+                "from multi-spectral Sentinel-2 imagery, generating a pixel-level region highlight mask for validated land-cover identification."
+            )
+            limitations = ""
+        else:
+            summary = (
+                f"Identified and highlighted estimated {target_class} regions across ~{coverage if coverage is not None else ''}% "
+                f"of the satellite scene using visible-spectrum spectral and texture heuristics (SCL unavailable)."
+            )
+            explanation = (
+                "The uploaded imagery lacks multi-spectral SCL band data. Grounding applied visible-spectrum RGB spectral and texture gradient heuristics to segment likely target regions."
+            )
+            limitations = (
+                "Multi-spectral SCL band is unavailable in this image format. The highlighted regions represent a visible-spectrum RGB heuristic (lower precision than Sentinel-2 SCL)."
+            )
+
+        return Interpretation(
+            answer=clean_answer or summary,
+            summary=summary,
+            key_findings=findings,
+            technical_interpretation=explanation,
+            limitations=limitations,
+        )
+
+    # ── BBOX MODEL GROUNDING ──────────────────────────────────────────────────
     findings = [f"Model used: {model_name}", f"Query target: {norm_query}"]
 
     if conf is not None:

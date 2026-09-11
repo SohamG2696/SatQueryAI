@@ -30,6 +30,8 @@ from app.utils.validators import validate_query
 class AgenticController:
     """Central agent controller coordinating specialist remote sensing workflows."""
 
+    synthesize_multi_model_results = staticmethod(synthesize_multi_model_results)
+
     def process_query(
         self,
         images: List[Any],
@@ -114,6 +116,7 @@ class AgenticController:
                     models_used=[],
                     parameters={
                         "valid": False,
+                        "status": validation.status,
                         "reason": rejection_reason,
                         "original_query": clean_query,
                         "execution_trace": [
@@ -122,7 +125,7 @@ class AgenticController:
                             "Specialist model execution bypassed",
                         ],
                     },
-                    task_route="rejected_query",
+                    task_route="rejection",
                     processing_time_ms=0.0,
                 ),
             )
@@ -330,7 +333,7 @@ class AgenticController:
             if validation.operation:
                 response.operation = validation.operation
 
-            # Enrich parameters with factual execution trace
+            # Enrich parameters with factual execution trace & source metadata
             trace = [
                 f"Query validated: intent={validation.intent}, canonical_task={validation.canonical_task}",
                 f"Loaded {image_count} satellite image(s)",
@@ -339,6 +342,10 @@ class AgenticController:
                 "Result generated successfully",
             ]
             response.execution_summary.parameters["execution_trace"] = trace
+            if meta:
+                for meta_key in ("source", "satellite", "product", "acquisitionMode", "bbox", "latitude", "longitude"):
+                    if meta_key in meta:
+                        response.execution_summary.parameters[meta_key] = meta[meta_key]
 
             # Cache the assembled response
             inference_cache.put(
@@ -406,7 +413,7 @@ class AgenticController:
 
         # Synthesize results into ONE coherent response with error fallback
         try:
-            synthesis_result = synthesize_multi_model_results(
+            synthesis_result = self.synthesize_multi_model_results(
                 original_query=clean_query,
                 sub_task_results=sub_task_results,
             )

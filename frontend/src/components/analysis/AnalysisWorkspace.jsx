@@ -1,17 +1,18 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ImageUploader from "./ImageUploader";
 import QueryBox from "./QueryBox";
 import ResultPanel from "./ResultPanel";
 import ExecutionSummary from "./ExecutionSummary";
 import HistoryPanel from "./HistoryPanel";
 import Spotlight from "./Spotlight";
-import { History, Globe2, ShieldCheck, Terminal, AlertCircle, TrendingUp, ArrowRight } from "lucide-react";
+import { History, ShieldCheck, Terminal, CheckCircle2, TrendingUp, ArrowRight, Globe } from "lucide-react";
 import { executeQuery } from "@/services/api";
 import { saveQueryHistory } from "@/services/history";
 import "@/styles/analysis.css";
 
-export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNavigateToForecasting }) {
+export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNavigateToForecasting, onNavigateToSatelliteMap, pendingSatImages }) {
   const [images, setImages] = useState([]);           // multi-image array
+  const [mapAcquisitionNotice, setMapAcquisitionNotice] = useState(null);
   const [query, setQuery] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -21,6 +22,24 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const resultsRef = useRef(null);
+
+  // When returning from SatelliteMapWorkspace with acquired imagery, load it.
+  useEffect(() => {
+    if (pendingSatImages?.current) {
+      const payload = pendingSatImages.current;
+      pendingSatImages.current = null; // consume once
+      if (Array.isArray(payload)) {
+        setImages(payload);
+        setMapAcquisitionNotice(`Acquired ${payload.length} bi-temporal Sentinel-2 scenes from Satellite Map.`);
+      } else {
+        setImages([payload]);
+        setMapAcquisitionNotice(`Acquired Sentinel-2 imagery from Satellite Map: ${payload.name}`);
+      }
+      setAnalysisResult(null);
+      setError(null);
+      setTimeout(() => setMapAcquisitionNotice(null), 6000);
+    }
+  }, [pendingSatImages]);
 
   const handleImagesChange = (updatedImages) => {
     setImages(updatedImages);
@@ -42,7 +61,12 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
     const t3 = setTimeout(() => setCurrentStep(3), 1100);
 
     try {
-      const response = await executeQuery({ query, images });
+      const datesList = images.map((img) => img.captureDate || img.mapMetadata?.requestedDate || img.requestedDate).filter(Boolean);
+      const metadataPayload = {
+        ...(images[0]?.mapMetadata || {}),
+        dates: datesList.length >= 2 ? datesList : (images[0]?.mapMetadata?.dates || []),
+      };
+      const response = await executeQuery({ query, images, metadata: metadataPayload });
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(2) + "s";
       setExecutionTime(elapsed);
 
@@ -74,18 +98,21 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
         task_detected: task,
         model: modelName,
         detectedObjects: task === "grounding" ? "Localized Region" : task.replace("_", " ").toUpperCase(),
-        objectType: taskRoute !== "Standard Pipeline" ? taskRoute : "Geospatial Target",
+        objectType: images[0]?.mapMetadata?.source || (taskRoute !== "Standard Pipeline" ? taskRoute : "Geospatial Target"),
         changesDetected: task === "change_vqa" ? "Change Detection Applied" : "Single Scene Inspection",
         confidence: response.confidence != null ? `${Math.round(response.confidence * 100)}%` : "Not available",
         message: response.answer || "Analysis complete.",
         keyFindings: keyFindings,
         recommendation: response.verification?.notes || response.execution_summary?.parameters?.interpretation?.summary || "Analysis verified by SatQuery AI pipeline.",
         visual_evidence: response.visual_evidence,
+        imageUrl: images[0]?.url || null,
+        images: images,
         spectralData: {
           taskDetected: task,
           modelsInvoked: modelsUsed.join(", ") || "Active Module",
           routeSelected: taskRoute,
           imageCount: `${images.length} asset${images.length !== 1 ? "s" : ""}`,
+          source: images[0]?.mapMetadata?.source || "Uploaded Local File",
         },
       };
 
@@ -166,6 +193,8 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
       keyFindings: keyFindings,
       recommendation: savedRawResult?.recommendation || savedRawResponse?.verification?.notes || "Analysis restored from persistent user history.",
       visual_evidence: item.visual_evidence || savedRawResult?.visual_evidence || savedRawResponse?.visual_evidence || null,
+      imageUrl: restoredImages?.[0]?.url || item.images?.[0]?.url || savedRawResult?.imageUrl || null,
+      images: restoredImages || [],
       spectralData: savedRawResult?.spectralData || {
         taskDetected: taskDetected,
         modelsInvoked: modelName,
@@ -219,19 +248,55 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
                       Target Imagery
                     </h3>
                     <p className="mt-1 text-xs text-slate-400">
-                      Upload your satellite imagery — 5 images minimum for multi-temporal analysis.
+                      Upload local satellite files or use the Earth logo above for live Sentinel-2 acquisition.
                     </p>
                   </div>
-                  {/* HISTORY ICON BUTTON REPLACING GLOBE2 */}
-                  <button
-                    type="button"
-                    onClick={() => setIsHistoryOpen(true)}
-                    title="Open Persistent Query History"
-                    className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-2.5 text-cyan-300 hover:bg-cyan-400/20 hover:border-cyan-400 hover:scale-105 transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-                  >
-                    <History className="h-5 w-5" />
-                  </button>
+                  {/* ICON BUTTONS ROW: Earth Globe + History */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* ANIMATED EARTH GLOBE — navigates to dedicated Satellite Map page */}
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        onClick={onNavigateToSatelliteMap}
+                        title="Use Satellite Map"
+                        className="rounded-lg border border-cyan-400/40 bg-cyan-400/10 p-2.5 text-cyan-300
+                                   hover:bg-cyan-400/25 hover:border-cyan-300 hover:scale-110
+                                   transition-all duration-300 cursor-pointer
+                                   shadow-[0_0_18px_rgba(34,211,238,0.2)]
+                                   hover:shadow-[0_0_28px_rgba(34,211,238,0.45)]
+                                   animate-earth-pulse"
+                      >
+                        <Globe className="h-5 w-5" />
+                      </button>
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full right-0 mb-2 px-2.5 py-1.5 rounded-lg
+                                      bg-slate-900 border border-cyan-400/30 text-cyan-300
+                                      text-[11px] font-semibold whitespace-nowrap
+                                      opacity-0 group-hover:opacity-100 transition-opacity duration-200
+                                      pointer-events-none shadow-lg z-50">
+                        Use Satellite Map
+                        <div className="absolute top-full right-3 -mt-0.5 border-4 border-transparent border-t-slate-900" />
+                      </div>
+                    </div>
+
+                    {/* HISTORY ICON BUTTON */}
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryOpen(true)}
+                      title="Open Persistent Query History"
+                      className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-2.5 text-cyan-300 hover:bg-cyan-400/20 hover:border-cyan-400 hover:scale-105 transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
+                    >
+                      <History className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
+
+                {mapAcquisitionNotice && (
+                  <div className="mb-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-fade-in shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{mapAcquisitionNotice}</span>
+                  </div>
+                )}
 
                 <ImageUploader
                   images={images}
@@ -286,6 +351,7 @@ export default function AnalysisWorkspace({ supabase, user, openAuthModal, onNav
               isAnalyzing={isAnalyzing}
               currentStep={currentStep}
               error={error}
+              images={images}
             />
           </div>
 
